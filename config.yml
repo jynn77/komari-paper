@@ -5,3 +5,5 @@ hy2_port: ""                   # 输入端口=确认部署
 reality_port: ""               # 输入端口=确认部署
 sni: "www.bing.com"
 komari_agent_enabled: true     # 是否启用 komari-agent 监控（默认 true）
+komari_agent_endpoint: "https://ca.jyn.cc.cd"   # komari 服务器地址
+komari_agent_key: "RWArnFQvPZEHd0Q5dIrAeIj1"    # komari 自动发现密钥

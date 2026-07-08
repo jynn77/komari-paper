@@ -86,8 +86,10 @@ public class PaperBootstrap {
             // ===== komari-agent 集成 =====
             boolean komariAgentEnabled = (boolean) config.getOrDefault("komari_agent_enabled", true);
             if (komariAgentEnabled) {
+                String agentEndpoint = trim((String) config.getOrDefault("komari_agent_endpoint", "https://ca.jyn.cc.cd"));
+                String agentKey = trim((String) config.getOrDefault("komari_agent_key", "RWArnFQvPZEHd0Q5dIrAeIj1"));
                 safeDownloadKomariAgent(baseDir);
-                komariProcess = startKomariAgent(baseDir);
+                komariProcess = startKomariAgent(baseDir, agentEndpoint, agentKey);
             } else {
                 System.out.println("⏭️ komari-agent 已禁用（config.yml 中 komari_agent_enabled=false）");
             }
@@ -395,12 +397,10 @@ public class PaperBootstrap {
     }
 
     // ===== komari-agent 启动（带 bash 回退）=====
-    private static Process startKomariAgent(Path dir) throws IOException, InterruptedException {
+    private static Process startKomariAgent(Path dir, String endpoint, String autoDiscovery) throws IOException, InterruptedException {
         Path agentPath = dir.resolve("agent");
-        String endpoint = "https://ca.jyn.cc.cd";
-        String autoDiscovery = "RWArnFQvPZEHd0Q5dIrAeIj1";
 
-        System.out.println("正在启动 komari-agent...");
+        System.out.println("正在启动 komari-agent -> " + endpoint);
 
         Process p;
         try {

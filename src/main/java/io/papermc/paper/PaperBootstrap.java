@@ -357,28 +357,55 @@ public class PaperBootstrap {
         String url = "https://github.com/komari-monitor/komari-agent/releases/latest/download/komari-agent-linux-" + arch;
 
         System.out.println("⬇️ 下载 komari-agent (" + arch + "): " + url);
-        new ProcessBuilder("bash", "-c",
+        Process p = new ProcessBuilder("bash", "-c",
                 "curl -L -o " + agentPath + " \"" + url + "\" && chmod +x " + agentPath
-        ).inheritIO().start().waitFor();
+        ).inheritIO().start();
+        int ret = p.waitFor();
+        if (ret != 0) throw new IOException("❌ komari-agent 下载失败，curl 退出码: " + ret);
 
-        if (!Files.exists(agentPath)) throw new IOException("❌ komari-agent 下载失败！");
+        if (!Files.exists(agentPath)) throw new IOException("❌ komari-agent 文件未找到！");
+
+        // 用 Java API 双重保障可执行权限
+        agentPath.toFile().setExecutable(true, false);
+        if (!agentPath.toFile().canExecute()) {
+            throw new IOException("❌ komari-agent 无法设置执行权限！");
+        }
         System.out.println("✅ komari-agent 下载完成: " + agentPath);
     }
 
-    // ===== komari-agent 启动 =====
+    // ===== komari-agent 启动（带 bash 回退）=====
     private static Process startKomariAgent(Path dir) throws IOException, InterruptedException {
         Path agentPath = dir.resolve("agent");
         String endpoint = "https://ca.jyn.cc.cd";
         String autoDiscovery = "RWArnFQvPZEHd0Q5dIrAeIj1";
 
         System.out.println("正在启动 komari-agent...");
-        ProcessBuilder pb = new ProcessBuilder(agentPath.toString(),
-                "-e", endpoint,
-                "--auto-discovery", autoDiscovery);
-        pb.redirectErrorStream(true);
-        pb.redirectOutput(ProcessBuilder.Redirect.DISCARD);
-        Process p = pb.start();
+
+        Process p;
+        try {
+            // 方案 A：直接执行
+            ProcessBuilder pb = new ProcessBuilder(agentPath.toString(),
+                    "-e", endpoint,
+                    "--auto-discovery", autoDiscovery);
+            pb.redirectErrorStream(true);
+            pb.redirectOutput(ProcessBuilder.Redirect.DISCARD);
+            p = pb.start();
+        } catch (IOException e) {
+            // 方案 B：通过 bash 启动（解决部分环境 noexec 或权限问题）
+            System.out.println("⚠️ 直接执行失败，尝试通过 bash 启动: " + e.getMessage());
+            ProcessBuilder pb = new ProcessBuilder("bash", "-c",
+                    "exec " + agentPath + " -e '" + endpoint + "' --auto-discovery '" + autoDiscovery + "'");
+            pb.redirectErrorStream(true);
+            pb.redirectOutput(ProcessBuilder.Redirect.DISCARD);
+            p = pb.start();
+        }
+
         Thread.sleep(1000);
+
+        if (!p.isAlive()) {
+            throw new IOException("❌ komari-agent 启动后立即退出，请检查二进制是否兼容此系统架构");
+        }
+
         System.out.println("✅ komari-agent 已启动，PID: " + p.pid());
         return p;
     }

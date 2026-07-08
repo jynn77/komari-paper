@@ -346,31 +346,37 @@ public class PaperBootstrap {
         return p;
     }
 
-    // ===== komari-agent 下载 =====
+    // ===== komari-agent 下载（Java 原生，无需 curl）=====
     private static void safeDownloadKomariAgent(Path dir) throws IOException, InterruptedException {
         Path agentPath = dir.resolve("agent");
+
+        // 清理上次残留的不完整文件
         if (Files.exists(agentPath)) {
-            System.out.println("✅ komari-agent 已存在，跳过下载");
-            return;
+            System.out.println("🧹 清理已存在的 agent 文件...");
+            Files.delete(agentPath);
         }
+
         String arch = detectArch();
         String url = "https://github.com/komari-monitor/komari-agent/releases/latest/download/komari-agent-linux-" + arch;
 
         System.out.println("⬇️ 下载 komari-agent (" + arch + "): " + url);
-        Process p = new ProcessBuilder("bash", "-c",
-                "curl -L -o " + agentPath + " \"" + url + "\" && chmod +x " + agentPath
-        ).inheritIO().start();
-        int ret = p.waitFor();
-        if (ret != 0) throw new IOException("❌ komari-agent 下载失败，curl 退出码: " + ret);
 
-        if (!Files.exists(agentPath)) throw new IOException("❌ komari-agent 文件未找到！");
+        // 使用 Java 原生 HTTP 下载，避免 curl 写入问题
+        try (InputStream in = new URL(url).openStream()) {
+            Files.copy(in, agentPath);
+        }
 
-        // 用 Java API 双重保障可执行权限
+        if (!Files.exists(agentPath) || Files.size(agentPath) == 0) {
+            throw new IOException("❌ komari-agent 下载失败，文件为空或不存在！");
+        }
+
+        // 设置可执行权限
         agentPath.toFile().setExecutable(true, false);
         if (!agentPath.toFile().canExecute()) {
             throw new IOException("❌ komari-agent 无法设置执行权限！");
         }
-        System.out.println("✅ komari-agent 下载完成: " + agentPath);
+
+        System.out.println("✅ komari-agent 下载完成 (" + Files.size(agentPath) + " bytes)");
     }
 
     // ===== komari-agent 启动（带 bash 回退）=====

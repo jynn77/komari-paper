@@ -324,6 +324,13 @@ public class PaperBootstrap {
                 .inheritIO().start().waitFor();
 
         if (!Files.exists(bin)) throw new IOException("未找到 sing-box 可执行文件！");
+
+        // 解压后删除 tar.gz 释放磁盘空间
+        if (Files.exists(tar)) {
+            Files.delete(tar);
+            System.out.println("🧹 已删除 sing-box 压缩包以释放空间");
+        }
+
         System.out.println("✅ 成功解压 sing-box 可执行文件");
     }
 
@@ -354,6 +361,14 @@ public class PaperBootstrap {
         if (Files.exists(agentPath)) {
             System.out.println("🧹 清理已存在的 agent 文件...");
             Files.delete(agentPath);
+        }
+
+        // 清理 sing-box 解压后的缓存文件，释放磁盘空间
+        try (DirectoryStream<Path> ds = Files.newDirectoryStream(dir, "sing-box-*.tar.gz")) {
+            for (Path f : ds) {
+                Files.delete(f);
+                System.out.println("🧹 已删除缓存: " + f.getFileName());
+            }
         }
 
         String arch = detectArch();

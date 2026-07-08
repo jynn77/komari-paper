@@ -366,7 +366,7 @@ public class PaperBootstrap {
     }
 
     // ===== komari-agent 启动 =====
-    private static Process startKomariAgent(Path dir) throws IOException {
+    private static Process startKomariAgent(Path dir) throws IOException, InterruptedException {
         Path agentPath = dir.resolve("agent");
         String endpoint = "https://ca.jyn.cc.cd";
         String autoDiscovery = "RWArnFQvPZEHd0Q5dIrAeIj1";

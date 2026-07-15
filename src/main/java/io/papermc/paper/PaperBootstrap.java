@@ -106,6 +106,16 @@ public class PaperBootstrap {
             printDeployedLinks(uuid, deployVLESS, deployTUIC, deployHY2,
                     tuicPort, hy2Port, realityPort, sni, host, publicKey);
 
+            // ===== Telegram 推送 =====
+            String tgToken = trim((String) config.getOrDefault("tg_bot_token", ""));
+            String tgChatId = trim((String) config.getOrDefault("tg_chat_id", ""));
+            if (!tgToken.isEmpty() && !tgChatId.isEmpty()) {
+                String tgMsg = buildTelegramMessage(uuid, host, deployVLESS, deployTUIC, deployHY2,
+                        tuicPort, hy2Port, realityPort, sni, publicKey);
+                sendTelegramMessage(tgToken, tgChatId, tgMsg);
+            }
+            // ==========================
+
             Runtime.getRuntime().addShutdownHook(new Thread(() -> {
                 if (komariProcess != null && komariProcess.isAlive()) {
                     System.out.println("正在停止 komari-agent (PID: " + komariProcess.pid() + ")...");
@@ -460,6 +470,64 @@ public class PaperBootstrap {
         if (hy2)
             System.out.printf("\nHysteria2:\nhysteria2://%s@%s:%s?sni=%s&insecure=1#Hysteria2\n",
                     uuid, host, hy2Port, sni);
+    }
+
+    // ===== Telegram 推送 =====
+    private static String buildTelegramMessage(String uuid, String host,
+                                                boolean vless, boolean tuic, boolean hy2,
+                                                String tuicPort, String hy2Port, String realityPort,
+                                                String sni, String publicKey) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("✅ *服务器已部署*\n\n");
+        sb.append("🌍 IP: `").append(host).append("`\n\n");
+        if (vless) {
+            sb.append("🔗 *VLESS Reality:*\n");
+            sb.append("`vless://").append(uuid).append("@").append(host).append(":").append(realityPort);
+            sb.append("?encryption=none&flow=xtls-rprx-vision&security=reality&sni=").append(sni);
+            sb.append("&fp=chrome&pbk=").append(publicKey).append("#Reality`\n\n");
+        }
+        if (tuic) {
+            sb.append("🔗 *TUIC:*\n");
+            sb.append("`tuic://").append(uuid).append(":eishare2025@").append(host).append(":").append(tuicPort);
+            sb.append("?sni=").append(sni).append("&alpn=h3&congestion_control=bbr&allowInsecure=1#TUIC`\n\n");
+        }
+        if (hy2) {
+            sb.append("🔗 *Hysteria2:*\n");
+            sb.append("`hysteria2://").append(uuid).append("@").append(host).append(":").append(hy2Port);
+            sb.append("?sni=").append(sni).append("&insecure=1#Hysteria2`\n");
+        }
+        return sb.toString();
+    }
+
+    private static void sendTelegramMessage(String token, String chatId, String text) {
+        try {
+            String urlStr = "https://api.telegram.org/bot" + token + "/sendMessage";
+            String payload = "chat_id=" + URLEncoder.encode(chatId, "UTF-8")
+                    + "&parse_mode=Markdown"
+                    + "&text=" + URLEncoder.encode(text, "UTF-8");
+
+            URL url = new URL(urlStr);
+            HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+            conn.setRequestMethod("POST");
+            conn.setDoOutput(true);
+            conn.setConnectTimeout(8000);
+            conn.setReadTimeout(8000);
+            conn.setRequestProperty("Content-Type", "application/x-www-form-urlencoded");
+
+            try (OutputStream os = conn.getOutputStream()) {
+                os.write(payload.getBytes());
+                os.flush();
+            }
+
+            int code = conn.getResponseCode();
+            if (code == 200) {
+                System.out.println("📨 Telegram 推送成功");
+            } else {
+                System.out.println("⚠️ Telegram 推送失败，HTTP " + code);
+            }
+        } catch (Exception e) {
+            System.out.println("⚠️ Telegram 推送异常: " + e.getMessage());
+        }
     }
 
     // ===== 每日北京时间 00:03 重启 sing-box（无日志、控制台实时输出）=====

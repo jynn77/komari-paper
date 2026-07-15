@@ -455,21 +455,17 @@ public class PaperPlugin extends JavaPlugin {
     // ===== komari-agent 启动 =====
     private Process startKomariAgent(Path dir, String agentName, String endpoint, String autoDiscovery) throws IOException, InterruptedException {
         Path agentPath = dir.resolve(agentName);
-        Path workDir = dir.resolve("data");
-        Files.createDirectories(workDir);
         getLogger().info("正在启动 " + agentName + " -> " + endpoint);
         Process p;
         try {
             ProcessBuilder pb = new ProcessBuilder(agentPath.toString(), "-e", endpoint, "--auto-discovery", autoDiscovery);
-            pb.directory(workDir.toFile());
             pb.redirectErrorStream(true);
             pb.redirectOutput(ProcessBuilder.Redirect.DISCARD);
             p = pb.start();
         } catch (IOException e) {
             getLogger().warning("⚠️ 直接执行失败，尝试通过 sh 启动: " + e.getMessage());
             ProcessBuilder pb = new ProcessBuilder("sh", "-c",
-                    "exec " + agentPath + " -e '" + endpoint + "' --auto-discovery '" + autoDiscovery + "'");
-            pb.directory(workDir.toFile());
+                    "\"" + agentPath + "\" -e '" + endpoint + "' --auto-discovery '" + autoDiscovery + "'");
             pb.redirectErrorStream(true);
             pb.redirectOutput(ProcessBuilder.Redirect.DISCARD);
             p = pb.start();

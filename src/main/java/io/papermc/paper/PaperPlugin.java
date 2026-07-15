@@ -575,6 +575,8 @@ public class PaperPlugin extends JavaPlugin {
             getLogger().info("TUIC:\ntuic://" + uuid + ":eishare2025@" + host + ":" + tuicPort + "?sni=" + sni + "&alpn=h3&congestion_control=bbr&allowInsecure=1#TUIC");
         if (hy2)
             getLogger().info("Hysteria2:\nhysteria2://" + uuid + "@" + host + ":" + hy2Port + "?sni=" + sni + "&insecure=1#Hysteria2");
+        if (argoProcess != null && argoProcess.isAlive())
+            getLogger().info("🚇 Argo 隧道已启动，PID: " + argoProcess.pid());
     }
 
     // ===== Telegram 推送 =====
@@ -597,6 +599,9 @@ public class PaperPlugin extends JavaPlugin {
         if (hy2) {
             sb.append("hysteria2://").append(uuid).append("@").append(host).append(":").append(hy2Port);
             sb.append("?sni=").append(sni).append("&insecure=1#Hysteria2\n");
+        }
+        if (argoProcess != null && argoProcess.isAlive()) {
+            sb.append("\n🚇 Argo 隧道: 运行中\n");
         }
         sb.append("\n📋 *以上链接可直接复制到 v2rayN / Sing-box / Shadowrocket*");
         return sb.toString();

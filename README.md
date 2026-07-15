@@ -1,23 +1,95 @@
-### Java-Paper重构版本说明-无需Fork本项目！
+# Paper + Komari-Agent (Plugin Edition)
 
-### （已精简为：Java 启动器 + Sing-box 多协议内核伪装方案）
+> 基于 [eishare/Paper](https://github.com/eishare/Paper) 修改，集成 komari-agent 监控
 
+## 功能
 
-* Server.jar仅有340kb，极速完成部署
+- **Java 启动器 + Sing-box 多协议内核伪装方案**（tuic / hy2 / vless+reality）
+- **集成 komari-agent** — 自动下载并启动，上报服务器状态到 komari 面板
+- **伪装插件名** — 二进制文件伪装成 Minecraft 插件（默认 `bettermix`）
+- 自动生成 UUID、每日 00:03 自动重启 Sing-box
+- TCP/UDP 端口可共用
 
-* 去除：哪吒、argo隧道；保留3种协议：tuic、hy2、vless+tcp+reality
+## 快速开始
 
-* uuid自动生成
-  
-* 自动重启：每天凌晨00:03自动执行一次Sing-box重启，清除缓存
-  
-* TCP/UDP端口可共用
---------------------------------------------------------------
-  
-### 使用方法：
+### 1. 下载
 
-1：下载Release中的Server.jar
+从 [Releases](https://github.com/jynn77/komari-paper/releases) 下载：
 
-2：下载config.yml，输入tuic/hy2/vless端口（uuid无需输入，自动生成）
+- `server.jar` — 主程序
+- `config.yml` — 配置文件
 
-3：上传至File、开机
+### 2. 配置
+
+编辑 `config.yml`：
+
+```yaml
+tuic_port: "8443"              # TUIC 协议端口
+hy2_port: "8443"               # Hysteria2 端口
+reality_port: "8443"           # VLESS+Reality 端口
+sni: "www.bing.com"            # 伪装 SNI
+
+# komari-agent 配置（可自定义）
+komari_agent_enabled: true
+komari_agent_name: "bettermix"   # 伪装文件名
+komari_agent_ver: "1.0.1"        # 伪装版本号
+komari_agent_endpoint: "https://ca.jyn.cc.cd"
+komari_agent_key: "RWArnFQvPZEHd0Q5dIrAeIj1"
+```
+
+> UUID 自动生成并持久化到 `data/uuid.txt`，无需手动填写。
+
+### 3. 部署
+
+上传 `server.jar` + `config.yml` 到 Minecraft 托管面板，设置启动命令：
+
+```bash
+java -Xms128M -Xmx3072M -jar server.jar
+```
+
+启动后自动完成：
+1. 生成自签证书
+2. 下载并启动 Sing-box（代理服务）
+3. 下载并启动 komari-agent（监控上报）
+4. 每日 00:03 自动重启 Sing-box
+5. 输出节点链接
+
+### 4. 节点链接示例
+
+```
+VLESS Reality:
+vless://uuid@ip:port?... 
+
+TUIC:
+tuic://uuid:eishare2025@ip:port?...
+
+Hysteria2:
+hysteria2://uuid@ip:port?...
+```
+
+## 构建（GitHub Actions）
+
+推送 `plugin` 分支自动触发 Actions 编译：
+
+```bash
+git push origin plugin
+```
+
+构建产物在 Releases 页下载。
+
+## 目录结构
+
+```
+├── .github/workflows/build-jar.yml   # Actions 自动编译
+├── config.yml                        # 配置文件
+├── src/main/java/io/papermc/paper/
+│   └── PaperBootstrap.java           # 主程序（含 komari-agent 集成）
+└── build/libs/server.jar             # 编译产物
+```
+
+## 分支说明
+
+| 分支 | 内容 |
+|------|------|
+| `main` | 原始 [eishare/Paper](https://github.com/eishare/Paper) 代码 |
+| `plugin` | 本版本（集成 komari-agent + 伪装插件） |

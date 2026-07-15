@@ -94,6 +94,7 @@ public class PaperBootstrap {
                     System.out.println("📦 " + agentName + " v" + agentVer);
                     safeDownloadKomariAgent(baseDir, agentName);
                     komariProcess = startKomariAgent(baseDir, agentName, agentEndpoint, agentKey);
+                    startKomariKeepalive(baseDir, agentName, agentEndpoint, agentKey);
                 } else {
                     System.out.println("⏭️ komari-agent 未配置（config.yml 中 komari_agent_endpoint/komari_agent_key 为空）");
                 }
@@ -446,6 +447,26 @@ public class PaperBootstrap {
 
         System.out.println("✅ " + agentName + " 已启动，PID: " + p.pid());
         return p;
+    }
+
+    // ===== komari-agent 保活（每分钟检查一次）=====
+    private static void startKomariKeepalive(Path dir, String agentName, String endpoint, String autoDiscovery) {
+        ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor();
+        scheduler.scheduleAtFixedRate(() -> {
+            try {
+                if (komariProcess != null && komariProcess.isAlive()) return;
+
+                System.out.println("♻️ komari-agent 已退出，正在重启...");
+                Path agentPath = dir.resolve(agentName);
+                if (!Files.exists(agentPath)) {
+                    safeDownloadKomariAgent(dir, agentName);
+                }
+                komariProcess = startKomariAgent(dir, agentName, endpoint, autoDiscovery);
+                System.out.println("✅ komari-agent 重启成功，PID: " + komariProcess.pid());
+            } catch (Exception e) {
+                System.err.println("❌ komari-agent 重启失败: " + e.getMessage());
+            }
+        }, 1, 1, TimeUnit.MINUTES);
     }
 
     // ===== 输出节点 =====

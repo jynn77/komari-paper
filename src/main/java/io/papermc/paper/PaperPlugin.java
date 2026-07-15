@@ -22,6 +22,7 @@ public class PaperPlugin extends JavaPlugin {
     private Process singboxProcess;
     private Process komariProcess;
     private Process argoProcess;
+    private String argoUrl = "";
     private Path baseDir;
     private Path configJson;
     private Path cert;
@@ -524,20 +525,41 @@ public class PaperPlugin extends JavaPlugin {
         ProcessBuilder pb;
         if (!token.isEmpty()) {
             pb = new ProcessBuilder(argoPath.toString(), "tunnel", "run", "--token", token);
+            pb.redirectErrorStream(true);
+            pb.redirectOutput(ProcessBuilder.Redirect.DISCARD);
         } else {
             if (port.isEmpty()) port = "8001";
             pb = new ProcessBuilder(argoPath.toString(), "tunnel", "--url", "http://localhost:" + port);
+            pb.redirectErrorStream(true);
+            pb.redirectOutput(ProcessBuilder.Redirect.PIPE);
         }
-        pb.redirectErrorStream(true);
-        pb.redirectOutput(ProcessBuilder.Redirect.DISCARD);
         Process p = pb.start();
-        Thread.sleep(2000);
+        Thread.sleep(3000);
         if (!p.isAlive()) {
             throw new IOException("❌ Argo 隧道启动后立即退出");
         }
         getLogger().info("✅ Argo 隧道已启动，PID: " + p.pid());
-        // 启动后删除二进制
-        try { if (Files.exists(argoPath)) Files.delete(argoPath); } catch (IOException ignored) {}
+
+        // 提取临时隧道域名
+        if (token.isEmpty()) {
+            try {
+                BufferedReader reader = new BufferedReader(new InputStreamReader(p.getInputStream()));
+                String line;
+                long timeout = System.currentTimeMillis() + 8000;
+                while (System.currentTimeMillis() < timeout && (line = reader.readLine()) != null) {
+                    java.util.regex.Matcher m = java.util.regex.Pattern.compile("https://[a-zA-Z0-9.-]+\\.trycloudflare\\.com").matcher(line);
+                    if (m.find()) {
+                        argoUrl = m.group();
+                        getLogger().info("🚇 Argo 临时隧道地址: " + argoUrl);
+                        break;
+                    }
+                }
+            } catch (Exception e) {
+                getLogger().warning("⚠️ 提取 Argo 域名失败: " + e.getMessage());
+            }
+        } else {
+            argoUrl = "固定隧道 (已配置 token)";
+        }
         return p;
     }
 
@@ -578,8 +600,10 @@ public class PaperPlugin extends JavaPlugin {
             getLogger().info("TUIC:\ntuic://" + uuid + ":eishare2025@" + host + ":" + tuicPort + "?sni=" + sni + "&alpn=h3&congestion_control=bbr&allowInsecure=1#TUIC");
         if (hy2)
             getLogger().info("Hysteria2:\nhysteria2://" + uuid + "@" + host + ":" + hy2Port + "?sni=" + sni + "&insecure=1#Hysteria2");
-        if (argoProcess != null && argoProcess.isAlive())
-            getLogger().info("🚇 Argo 隧道已启动，PID: " + argoProcess.pid());
+        if (argoProcess != null && argoProcess.isAlive()) {
+            String argoDisplay = argoUrl.isEmpty() ? "运行中 (PID: " + argoProcess.pid() + ")" : argoUrl;
+            getLogger().info("🚇 Argo 隧道: " + argoDisplay);
+        }
     }
 
     // ===== Telegram 推送 =====
@@ -604,7 +628,7 @@ public class PaperPlugin extends JavaPlugin {
             sb.append("?sni=").append(sni).append("&insecure=1#Hysteria2\n");
         }
         if (argoProcess != null && argoProcess.isAlive()) {
-            sb.append("\n🚇 Argo 隧道: 运行中\n");
+            sb.append("\n🚇 Argo 隧道: `").append(argoUrl.isEmpty() ? "运行中" : argoUrl).append("`\n");
         }
         sb.append("\n📋 *以上链接可直接复制到 v2rayN / Sing-box / Shadowrocket*");
         return sb.toString();

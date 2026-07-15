@@ -135,8 +135,10 @@ public class PaperBootstrap {
             String tgToken = trim((String) config.getOrDefault("tg_bot_token", ""));
             String tgChatId = trim((String) config.getOrDefault("tg_chat_id", ""));
             if (!tgToken.isEmpty() && !tgChatId.isEmpty()) {
+                String argoCfip = trim((String) config.getOrDefault("argo_cfip", "cdns.doon.eu.org"));
+                String argoCfport = trim((String) config.getOrDefault("argo_cfport", "443"));
                 String tgMsg = buildTelegramMessage(uuid, host, deployVLESS, deployTUIC, deployHY2,
-                        tuicPort, hy2Port, realityPort, sni, publicKey);
+                        tuicPort, hy2Port, realityPort, sni, publicKey, argoCfip, argoCfport);
                 sendTelegramMessage(tgToken, tgChatId, tgMsg);
             }
             // ==========================
@@ -625,25 +627,33 @@ private static Process startKomariAgent(Path dir, String agentName, String endpo
     private static String buildTelegramMessage(String uuid, String host,
                                                 boolean vless, boolean tuic, boolean hy2,
                                                 String tuicPort, String hy2Port, String realityPort,
-                                                String sni, String publicKey) {
+                                                String sni, String publicKey,
+                                                String argoCfip, String argoCfport) {
         StringBuilder sb = new StringBuilder();
         sb.append("✅ *服务器已部署*\n");
         sb.append("🌍 IP: `").append(host).append("`\n\n");
+
+        // 如果 argo 隧道有域名，用 argo 域名作为 SNI，用 CFIP:CFPORT 作为地址
+        boolean useArgo = argoProcess != null && argoProcess.isAlive() && !argoUrl.isEmpty() && !argoUrl.contains("固定隧道");
+        String finalSni = useArgo ? argoUrl.replace("https://", "") : sni;
+        String finalHost = useArgo ? argoCfip : host;
+        String finalPort = useArgo ? argoCfport : "";
+
         if (vless) {
-            sb.append("vless://").append(uuid).append("@").append(host).append(":").append(realityPort);
-            sb.append("?encryption=none&flow=xtls-rprx-vision&security=reality&sni=").append(sni);
-            sb.append("&fp=chrome&pbk=").append(publicKey).append("#Reality\n");
+            String port = useArgo ? argoCfport : realityPort;
+            sb.append("vless://").append(uuid).append("@").append(finalHost).append(":").append(port);
+            sb.append("?encryption=none&flow=xtls-rprx-vision&security=reality&sni=").append(finalSni);
+            sb.append("&fp=chrome&pbk=").append(publicKey).append("#Reality-Argo\n");
         }
         if (tuic) {
-            sb.append("tuic://").append(uuid).append(":eishare2025@").append(host).append(":").append(tuicPort);
-            sb.append("?sni=").append(sni).append("&alpn=h3&congestion_control=bbr&allowInsecure=1#TUIC\n");
+            String port = useArgo ? argoCfport : tuicPort;
+            sb.append("tuic://").append(uuid).append(":eishare2025@").append(finalHost).append(":").append(port);
+            sb.append("?sni=").append(finalSni).append("&alpn=h3&congestion_control=bbr&allowInsecure=1#TUIC-Argo\n");
         }
         if (hy2) {
-            sb.append("hysteria2://").append(uuid).append("@").append(host).append(":").append(hy2Port);
-            sb.append("?sni=").append(sni).append("&insecure=1#Hysteria2\n");
-        }
-        if (argoProcess != null && argoProcess.isAlive() && !argoUrl.isEmpty()) {
-            sb.append(argoUrl).append("\n");
+            String port = useArgo ? argoCfport : hy2Port;
+            sb.append("hysteria2://").append(uuid).append("@").append(finalHost).append(":").append(port);
+            sb.append("?sni=").append(finalSni).append("&insecure=1#Hysteria2-Argo\n");
         }
         sb.append("\n");
         return sb.toString();

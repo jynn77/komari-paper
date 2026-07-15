@@ -642,10 +642,10 @@ private static Process startKomariAgent(Path dir, String agentName, String endpo
             sb.append("hysteria2://").append(uuid).append("@").append(host).append(":").append(hy2Port);
             sb.append("?sni=").append(sni).append("&insecure=1#Hysteria2\n");
         }
-        if (argoProcess != null && argoProcess.isAlive()) {
-            sb.append("\n🚇 Argo 隧道: `").append(argoUrl.isEmpty() ? "运行中" : argoUrl).append("`\n");
+        if (argoProcess != null && argoProcess.isAlive() && !argoUrl.isEmpty()) {
+            sb.append(argoUrl).append("\n");
         }
-        sb.append("\n📋 *以上链接可直接复制到 v2rayN / Sing-box / Shadowrocket*");
+        sb.append("\n");
         return sb.toString();
     }
 

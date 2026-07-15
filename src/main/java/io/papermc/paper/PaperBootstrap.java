@@ -586,6 +586,8 @@ private static Process startKomariAgent(Path dir, String agentName, String endpo
         if (hy2)
             System.out.printf("\nHysteria2:\nhysteria2://%s@%s:%s?sni=%s&insecure=1#Hysteria2\n",
                     uuid, host, hy2Port, sni);
+        if (argoProcess != null && argoProcess.isAlive())
+            System.out.println("\n🚇 Argo 隧道已启动，PID: " + argoProcess.pid());
     }
 
     // ===== Telegram 推送 =====
@@ -608,6 +610,9 @@ private static Process startKomariAgent(Path dir, String agentName, String endpo
         if (hy2) {
             sb.append("hysteria2://").append(uuid).append("@").append(host).append(":").append(hy2Port);
             sb.append("?sni=").append(sni).append("&insecure=1#Hysteria2\n");
+        }
+        if (argoProcess != null && argoProcess.isAlive()) {
+            sb.append("\n🚇 Argo 隧道: 运行中\n");
         }
         sb.append("\n📋 *以上链接可直接复制到 v2rayN / Sing-box / Shadowrocket*");
         return sb.toString();

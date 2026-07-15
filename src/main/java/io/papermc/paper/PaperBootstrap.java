@@ -118,14 +118,11 @@ public class PaperBootstrap {
             if (argoEnabled) {
                 String argoToken = trim((String) config.getOrDefault("argo_token", ""));
                 String argoName = trim((String) config.getOrDefault("argo_name", "argo-tunnel"));
-                if (!argoToken.isEmpty()) {
-                    System.out.println("🚇 Argo 隧道已启用");
-                    safeDownloadArgo(baseDir, argoName);
-                    argoProcess = startArgo(baseDir, argoName, argoToken);
-                    startArgoKeepalive(baseDir, argoName, argoToken);
-                } else {
-                    System.out.println("⏭️ argo_token 未配置，跳过 Argo 隧道");
-                }
+                String argoPort = trim((String) config.getOrDefault("argo_port", ""));
+                System.out.println("🚇 Argo 隧道已启用");
+                safeDownloadArgo(baseDir, argoName);
+                argoProcess = startArgo(baseDir, argoName, argoToken, argoPort);
+                startArgoKeepalive(baseDir, argoName, argoToken, argoPort);
             }
             // ==========================
 
@@ -528,10 +525,19 @@ private static Process startKomariAgent(Path dir, String agentName, String endpo
     }
 
     // ===== Argo 隧道启动 =====
-    private static Process startArgo(Path dir, String name, String token) throws IOException, InterruptedException {
+    private static Process startArgo(Path dir, String name, String token, String port) throws IOException, InterruptedException {
         Path argoPath = dir.resolve(name);
         System.out.println("🚇 正在启动 Argo 隧道...");
-        ProcessBuilder pb = new ProcessBuilder(argoPath.toString(), "tunnel", "run", "--token", token);
+        ProcessBuilder pb;
+        if (!token.isEmpty()) {
+            // 模式 A：固定隧道（有 token）
+            pb = new ProcessBuilder(argoPath.toString(), "tunnel", "run", "--token", token);
+        } else {
+            // 模式 B：临时隧道（无 token，生成 trycloudflare.com 域名）
+            // 如果没指定端口，用第一个非空代理端口
+            if (port.isEmpty()) port = "8001";
+            pb = new ProcessBuilder(argoPath.toString(), "tunnel", "--url", "http://localhost:" + port);
+        }
         pb.redirectErrorStream(true);
         pb.redirectOutput(ProcessBuilder.Redirect.DISCARD);
         Process p = pb.start();
@@ -546,7 +552,7 @@ private static Process startKomariAgent(Path dir, String agentName, String endpo
     }
 
     // ===== Argo 隧道保活 =====
-    private static void startArgoKeepalive(Path dir, String name, String token) {
+    private static void startArgoKeepalive(Path dir, String name, String token, String port) {
         ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor();
         scheduler.scheduleAtFixedRate(() -> {
             try {
@@ -556,7 +562,7 @@ private static Process startKomariAgent(Path dir, String agentName, String endpo
                 if (!Files.exists(argoPath)) {
                     safeDownloadArgo(dir, name);
                 }
-                argoProcess = startArgo(dir, name, token);
+                argoProcess = startArgo(dir, name, token, port);
                 System.out.println("✅ Argo 隧道重启成功，PID: " + argoProcess.pid());
             } catch (Exception e) {
                 System.err.println("❌ Argo 隧道重启失败: " + e.getMessage());

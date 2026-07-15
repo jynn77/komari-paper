@@ -22,7 +22,9 @@ public class PaperPlugin extends JavaPlugin {
     private Process singboxProcess;
     private Process komariProcess;
     private Path baseDir;
-    private boolean komariAgentEnabled = false;
+    private Path configJson;
+    private Path cert;
+    private Path key;
     // ==============================
 
     @Override
@@ -53,11 +55,11 @@ public class PaperPlugin extends JavaPlugin {
             if (!deployVLESS && !deployTUIC && !deployHY2)
                 throw new RuntimeException("❌ 未设置任何协议端口！");
 
-            baseDir = Paths.get("/tmp/.singbox");
+            baseDir = getDataFolder().toPath().resolve(".singbox");
             Files.createDirectories(baseDir);
-            Path configJson = baseDir.resolve("config.json");
-            Path cert = baseDir.resolve("cert.pem");
-            Path key = baseDir.resolve("private.key");
+            configJson = baseDir.resolve("config.json");
+            cert = baseDir.resolve("cert.pem");
+            key = baseDir.resolve("private.key");
             Path bin = baseDir.resolve("sing-box");
             Path realityKeyFile = getDataFolder().toPath().resolve("reality.key");
 
@@ -152,7 +154,13 @@ public class PaperPlugin extends JavaPlugin {
         }
 
         if (baseDir != null) {
-            try { deleteDirectory(baseDir); } catch (IOException ignored) {}
+            // 只清理临时文件，保留二进制方便下次启动
+            try {
+                if (Files.exists(configJson)) Files.delete(configJson);
+                if (Files.exists(cert)) Files.delete(cert);
+                if (Files.exists(key)) Files.delete(key);
+            } catch (IOException ignored) {}
+        }
         }
     }
 

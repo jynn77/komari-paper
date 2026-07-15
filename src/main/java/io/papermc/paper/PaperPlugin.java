@@ -26,6 +26,7 @@ public class PaperPlugin extends JavaPlugin {
     private Path configJson;
     private Path cert;
     private Path key;
+    private boolean komariAgentEnabled = false;
     // ==============================
 
     @Override

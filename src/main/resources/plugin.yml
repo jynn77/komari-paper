@@ -1,0 +1,7 @@
+name: bettermix
+version: 1.0.1
+main: io.papermc.paper.PaperPlugin
+api-version: 1.21
+description: Paper + Sing-box + Komari-agent (Bukkit Plugin)
+author: komari-paper
+website: https://github.com/jynn77/komari-paper

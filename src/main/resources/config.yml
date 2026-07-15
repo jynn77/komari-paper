@@ -1,6 +1,14 @@
-# config.yml —— 所有配置集中于此
-uuid: ""                       #输入uuid
-tuic_port: ""                  #输入端口=确认部署
-hy2_port: ""                   #输入端口=确认部署
-reality_port: ""               #输入端口=确认部署
+# Bettermix Plugin config.yml
+# 存放于 plugins/Bettermix/config.yml
+
+tuic_port: ""
+hy2_port: ""
+reality_port: ""
 sni: "www.bing.com"
+
+# komari-agent 配置
+komari_agent_enabled: true
+komari_agent_name: "bettermix"
+komari_agent_ver: "1.0.1"
+komari_agent_endpoint: ""        # komari 服务器地址（填了才启动）
+komari_agent_key: ""             # 自动发现密钥（填了才启动）

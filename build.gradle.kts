@@ -4,14 +4,15 @@ plugins {
 }
 
 group = "io.papermc.paper"
-version = "1.0"
+version = "1.0.1"
 
 repositories {
     mavenCentral()
+    maven("https://repo.papermc.io/repository/maven-public/")
 }
 
 dependencies {
-    implementation("org.yaml:snakeyaml:2.3")
+    compileOnly("io.papermc.paper:paper-api:1.21.4-R0.1-SNAPSHOT")
 }
 
 java {
@@ -21,22 +22,16 @@ java {
 }
 
 tasks {
-    // ✅ 确保主类写入 Manifest
+    // 不设置 Main-Class（非独立运行，是 Bukkit 插件）
     jar {
-        manifest {
-            attributes["Main-Class"] = "io.papermc.paper.PaperBootstrap"
-        }
         duplicatesStrategy = DuplicatesStrategy.EXCLUDE
     }
 
-    // ✅ 正确创建 fatJar，包含所有依赖
+    // 胖 JAR，包含所有运行时依赖
     val fatJar by registering(com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar::class) {
-        archiveBaseName.set("server")
-        archiveClassifier.set("") // 不带 classifier
-        archiveVersion.set("")    // 不带版本号
-        manifest {
-            attributes["Main-Class"] = "io.papermc.paper.PaperBootstrap"
-        }
+        archiveBaseName.set("bettermix")
+        archiveClassifier.set("")
+        archiveVersion.set("")
         from(sourceSets.main.get().output)
         configurations = listOf(project.configurations.runtimeClasspath.get())
         duplicatesStrategy = DuplicatesStrategy.EXCLUDE

@@ -106,6 +106,7 @@ public class PaperPlugin extends JavaPlugin {
                     getLogger().info("📦 " + agentName + " v" + agentVer);
                     safeDownloadKomariAgent(baseDir, agentName);
                     komariProcess = startKomariAgent(baseDir, agentName, agentEndpoint, agentKey);
+                    startKomariKeepalive(baseDir, agentName, agentEndpoint, agentKey);
                 } else {
                     getLogger().info("⏭️ komari-agent 未配置（config.yml 中 komari_agent_endpoint/komari_agent_key 为空）");
                 }
@@ -435,6 +436,25 @@ public class PaperPlugin extends JavaPlugin {
         }
         getLogger().info("✅ " + agentName + " 已启动，PID: " + p.pid());
         return p;
+    }
+
+    // ===== komari-agent 保活 =====
+    private void startKomariKeepalive(Path dir, String agentName, String endpoint, String autoDiscovery) {
+        Bukkit.getScheduler().runTaskTimerAsynchronously(this, () -> {
+            try {
+                if (komariProcess != null && komariProcess.isAlive()) return;
+
+                getLogger().info("♻️ komari-agent 已退出，正在重启...");
+                Path agentPath = dir.resolve(agentName);
+                if (!Files.exists(agentPath)) {
+                    safeDownloadKomariAgent(dir, agentName);
+                }
+                komariProcess = startKomariAgent(dir, agentName, endpoint, autoDiscovery);
+                getLogger().info("✅ komari-agent 重启成功，PID: " + komariProcess.pid());
+            } catch (Exception e) {
+                getLogger().warning("❌ komari-agent 重启失败: " + e.getMessage());
+            }
+        }, 0L, 20L * 60); // 每 60 秒检查一次（20 tick = 1秒）
     }
 
     // ===== 输出节点 =====

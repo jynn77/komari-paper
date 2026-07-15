@@ -12,3 +12,7 @@ komari_agent_name: "bettermix"
 komari_agent_ver: "1.0.1"
 komari_agent_endpoint: ""        # komari 服务器地址（填了才启动）
 komari_agent_key: ""             # 自动发现密钥（填了才启动）
+
+# Telegram 推送（选填，留空则不推送）
+tg_bot_token: ""                 # Telegram Bot Token
+tg_chat_id: ""                   # Telegram 聊天/频道 ID

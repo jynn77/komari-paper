@@ -19,6 +19,7 @@ tg_chat_id: ""                   # Telegram 聊天/频道 ID
 
 # Argo 隧道（选填，默认关闭）
 argo_enabled: false              # 是否启用 Argo 隧道
+argo_domain: ""                  # Cloudflare 固定隧道域名（token 模式必填）
 argo_token: ""                   # Cloudflare Tunnel Token（留空则生成临时隧道）
 argo_port: ""                    # 临时隧道本地端口（留空默认 8001）
 argo_name: "argo-tunnel"         # 伪装文件名

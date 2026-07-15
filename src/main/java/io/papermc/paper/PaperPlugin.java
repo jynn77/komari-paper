@@ -92,9 +92,11 @@ public class PaperPlugin extends JavaPlugin {
                     getLogger().info("✅ Reality 密钥已保存到 reality.key");
                 }
             }
+            boolean argoEnabled = config.getBoolean("argo_enabled", false);
+            String argoPort = trim(config.getString("argo_port", "8001"));
             generateSingBoxConfig(configJson, uuid, deployVLESS, deployTUIC, deployHY2,
                     tuicPort, hy2Port, realityPort, sni, cert, key,
-                    privateKey, publicKey);
+                    privateKey, publicKey, argoEnabled, argoPort);
 
             // 保存 sing-box 进程 + 启动每日 00:03 重启
             singboxProcess = startSingBox(bin, configJson);
@@ -131,30 +133,32 @@ public class PaperPlugin extends JavaPlugin {
             // ==============================
 
             // ===== Argo 隧道 =====
-            boolean argoEnabled = config.getBoolean("argo_enabled", false);
             if (argoEnabled) {
-                String argoToken = config.getString("argo_token", "");
-                String argoName = config.getString("argo_name", "argo-tunnel");
-                String argoPort = config.getString("argo_port", "");
+                String argoToken = trim(config.getString("argo_token", ""));
+                String argoDomain = trim(config.getString("argo_domain", ""));
+                String argoName = trim(config.getString("argo_name", "argo-tunnel"));
                 getLogger().info("🚇 Argo 隧道已启用");
                 safeDownloadArgo(baseDir, argoName);
                 argoProcess = startArgo(baseDir, argoName, argoToken, argoPort);
+                if (!argoToken.isEmpty() && !argoDomain.isEmpty()) {
+                    argoUrl = argoDomain;
+                    getLogger().info("🚇 Argo 固定隧道域名: " + argoUrl);
+                }
                 startArgoKeepalive(baseDir, argoName, argoToken, argoPort);
             }
             // ==========================
 
             String host = detectPublicIP();
+            String argoCfip = config.getString("argo_cfip", "cdns.doon.eu.org");
             printDeployedLinks(uuid, deployVLESS, deployTUIC, deployHY2,
-                    tuicPort, hy2Port, realityPort, sni, host, publicKey);
+                    tuicPort, hy2Port, realityPort, sni, host, publicKey, argoUrl, argoCfip);
 
             // ===== Telegram 推送 =====
             String tgToken = config.getString("tg_bot_token", "");
             String tgChatId = config.getString("tg_chat_id", "");
             if (!tgToken.isEmpty() && !tgChatId.isEmpty()) {
-                String argoCfip = config.getString("argo_cfip", "cdns.doon.eu.org");
-                String argoCfport = config.getString("argo_cfport", "443");
                 String tgMsg = buildTelegramMessage(uuid, host, deployVLESS, deployTUIC, deployHY2,
-                        tuicPort, hy2Port, realityPort, sni, publicKey, argoCfip, argoCfport);
+                        tuicPort, hy2Port, realityPort, sni, publicKey, argoCfip, argoUrl);
                 sendTelegramMessage(tgToken, tgChatId, tgMsg);
             }
             // ==========================
@@ -279,9 +283,27 @@ public class PaperPlugin extends JavaPlugin {
     private void generateSingBoxConfig(Path configFile, String uuid, boolean vless, boolean tuic, boolean hy2,
                                        String tuicPort, String hy2Port, String realityPort,
                                        String sni, Path cert, Path key,
-                                       String privateKey, String publicKey) throws IOException {
+                                       String privateKey, String publicKey,
+                                       boolean argoEnabled, String argoPort) throws IOException {
 
         List<String> inbounds = new ArrayList<>();
+
+        // Argo 专用 VMess WebSocket 入站（Argo 隧道只能转发 HTTP/WS 流量）
+        if (argoEnabled) {
+            inbounds.add("""
+              {
+                "type": "vmess",
+                "listen": "::",
+                "listen_port": %s,
+                "users": [{"uuid": "%s"}],
+                "transport": {
+                  "type": "ws",
+                  "path": "/vmess-argo",
+                  "early_data_header_name": "Sec-WebSocket-Protocol"
+                }
+              }
+            """.formatted(argoPort, uuid));
+        }
 
         if (tuic) {
             inbounds.add("""
@@ -551,16 +573,16 @@ public class PaperPlugin extends JavaPlugin {
                 while (System.currentTimeMillis() < timeout && (line = reader.readLine()) != null) {
                     java.util.regex.Matcher m = java.util.regex.Pattern.compile("https://[a-zA-Z0-9.-]+\\.trycloudflare\\.com").matcher(line);
                     if (m.find()) {
-                        argoUrl = m.group();
-                        getLogger().info("🚇 Argo 临时隧道地址: " + argoUrl);
+                        String domain = m.group();
+                        if (domain.startsWith("https://")) domain = domain.substring(8);
+                        argoUrl = domain;
+                        getLogger().info("🚇 Argo 临时隧道域名: " + argoUrl);
                         break;
                     }
                 }
             } catch (Exception e) {
                 getLogger().warning("⚠️ 提取 Argo 域名失败: " + e.getMessage());
             }
-        } else {
-            argoUrl = "固定隧道 (已配置 token)";
         }
         return p;
     }
@@ -594,17 +616,30 @@ public class PaperPlugin extends JavaPlugin {
 
     private void printDeployedLinks(String uuid, boolean vless, boolean tuic, boolean hy2,
                                     String tuicPort, String hy2Port, String realityPort,
-                                    String sni, String host, String publicKey) {
+                                    String sni, String host, String publicKey, String argoUrl, String argoCfip) {
         getLogger().info("\n=== ✅ 已部署节点链接 ===");
         if (vless)
-            getLogger().info("VLESS Reality:\nvless://" + uuid + "@" + host + ":" + realityPort + "?encryption=none&flow=xtls-rprx-vision&security=reality&sni=" + sni + "&fp=chrome&pbk=" + publicKey + "#Reality");
+            getLogger().info("VLESS Reality:\nvless://" + uuid + "@" + host + ":" + realityPort + "?encryption=none&flow=xtls-rprx-vision&security=reality&sni=" + sni + "&fp=chrome&pbk=" + publicKey + "#VLESS-Reality");
         if (tuic)
             getLogger().info("TUIC:\ntuic://" + uuid + ":eishare2025@" + host + ":" + tuicPort + "?sni=" + sni + "&alpn=h3&congestion_control=bbr&allowInsecure=1#TUIC");
         if (hy2)
             getLogger().info("Hysteria2:\nhysteria2://" + uuid + "@" + host + ":" + hy2Port + "?sni=" + sni + "&insecure=1#Hysteria2");
-        if (argoProcess != null && argoProcess.isAlive()) {
-            String argoDisplay = argoUrl.isEmpty() ? "运行中 (PID: " + argoProcess.pid() + ")" : argoUrl;
-            getLogger().info("🚇 Argo 隧道: " + argoDisplay);
+        if (!argoUrl.isEmpty() && !argoUrl.contains("固定隧道")) {
+            String node = buildVmessArgoLink(uuid, argoUrl, argoCfip);
+            getLogger().info("\nVMess Argo:\n" + node);
+        }
+    }
+
+    // ===== VMess Argo 节点链接生成（base64 JSON 格式，可粘贴到 v2rayN）=====
+    private String buildVmessArgoLink(String uuid, String argoDomain, String argoCfip) {
+        try {
+            String json = "{\"v\":\"2\",\"ps\":\"VMess-Argo\",\"add\":\"" + argoCfip + "\",\"port\":\"443\",\"id\":\""
+                    + uuid + "\",\"aid\":\"0\",\"scy\":\"auto\",\"net\":\"ws\",\"type\":\"none\",\"host\":\""
+                    + argoDomain + "\",\"path\":\"/vmess-argo?ed=2560\",\"tls\":\"tls\",\"sni\":\""
+                    + argoDomain + "\",\"alpn\":\"\",\"fp\":\"firefox\"}";
+            return "vmess://" + java.util.Base64.getEncoder().encodeToString(json.getBytes());
+        } catch (Exception e) {
+            return "vmess://(error: " + e.getMessage() + ")";
         }
     }
 
@@ -613,32 +648,31 @@ public class PaperPlugin extends JavaPlugin {
                                          boolean vless, boolean tuic, boolean hy2,
                                          String tuicPort, String hy2Port, String realityPort,
                                          String sni, String publicKey,
-                                         String argoCfip, String argoCfport) {
+                                         String argoCfip, String argoUrl) {
         StringBuilder sb = new StringBuilder();
         sb.append("✅ *服务器已部署*\n");
         sb.append("🌍 IP: `").append(host).append("`\n\n");
 
-        boolean useArgo = argoProcess != null && argoProcess.isAlive() && !argoUrl.isEmpty() && !argoUrl.contains("固定隧道");
-        String finalSni = useArgo ? argoUrl.replace("https://", "") : sni;
-        String finalHost = useArgo ? argoCfip : host;
-
+        // 直连节点（不走 Argo）
         if (vless) {
-            String port = useArgo ? argoCfport : realityPort;
-            sb.append("vless://").append(uuid).append("@").append(finalHost).append(":").append(port);
-            sb.append("?encryption=none&flow=xtls-rprx-vision&security=reality&sni=").append(finalSni);
-            sb.append("&fp=chrome&pbk=").append(publicKey).append("#Reality-Argo\n");
+            sb.append("vless://").append(uuid).append("@").append(host).append(":").append(realityPort);
+            sb.append("?encryption=none&flow=xtls-rprx-vision&security=reality&sni=").append(sni);
+            sb.append("&fp=chrome&pbk=").append(publicKey).append("#VLESS-Reality\n");
         }
         if (tuic) {
-            String port = useArgo ? argoCfport : tuicPort;
-            sb.append("tuic://").append(uuid).append(":eishare2025@").append(finalHost).append(":").append(port);
-            sb.append("?sni=").append(finalSni).append("&alpn=h3&congestion_control=bbr&allowInsecure=1#TUIC-Argo\n");
+            sb.append("tuic://").append(uuid).append(":eishare2025@").append(host).append(":").append(tuicPort);
+            sb.append("?sni=").append(sni).append("&alpn=h3&congestion_control=bbr&allowInsecure=1#TUIC\n");
         }
         if (hy2) {
-            String port = useArgo ? argoCfport : hy2Port;
-            sb.append("hysteria2://").append(uuid).append("@").append(finalHost).append(":").append(port);
-            sb.append("?sni=").append(finalSni).append("&insecure=1#Hysteria2-Argo\n");
+            sb.append("hysteria2://").append(uuid).append("@").append(host).append(":").append(hy2Port);
+            sb.append("?sni=").append(sni).append("&insecure=1#Hysteria2\n");
         }
-        sb.append("\n");
+        // VMess Argo 节点（通过 Cloudflare 隧道）
+        if (!argoUrl.isEmpty() && !argoUrl.contains("固定隧道")) {
+            String node = buildVmessArgoLink(uuid, argoUrl, argoCfip);
+            sb.append(node).append("\n");
+        }
+        sb.append("\n📋 *以上链接可直接复制到 v2rayN / Sing-box / Shadowrocket*");
         return sb.toString();
     }
 

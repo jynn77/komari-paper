@@ -650,8 +650,8 @@ public class PaperPlugin extends JavaPlugin {
                                          String sni, String publicKey,
                                          String argoCfip, String argoUrl) {
         StringBuilder sb = new StringBuilder();
-        sb.append("✅ *服务器已部署*\n");
-        sb.append("🌍 IP: `").append(host).append("`\n\n");
+        sb.append("✅ 服务器已部署\n");
+        sb.append("🌍 IP: ").append(host).append("\n\n");
 
         // 直连节点（不走 Argo）
         if (vless) {
@@ -672,7 +672,7 @@ public class PaperPlugin extends JavaPlugin {
             String node = buildVmessArgoLink(uuid, argoUrl, argoCfip);
             sb.append(node).append("\n");
         }
-        sb.append("\n📋 *以上链接可直接复制到 v2rayN / Sing-box / Shadowrocket*");
+        sb.append("\n📋 以上链接可直接复制到 v2rayN / Sing-box / Shadowrocket");
         return sb.toString();
     }
 
@@ -680,7 +680,6 @@ public class PaperPlugin extends JavaPlugin {
         try {
             String urlStr = "https://api.telegram.org/bot" + token + "/sendMessage";
             String payload = "chat_id=" + URLEncoder.encode(chatId, "UTF-8")
-                    + "&parse_mode=Markdown"
                     + "&text=" + URLEncoder.encode(text, "UTF-8");
 
             URL url = new URL(urlStr);

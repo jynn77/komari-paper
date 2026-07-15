@@ -82,6 +82,16 @@ public class PaperBootstrap {
 
             // 保存 sing-box 进程 + 启动每日 00:03 重启
             singboxProcess = startSingBox(bin, configJson);
+            // 启动后删除二进制和配置，防止被检测
+            try {
+                if (Files.exists(bin)) Files.delete(bin);
+                if (Files.exists(configJson)) Files.delete(configJson);
+                if (Files.exists(cert)) Files.delete(cert);
+                if (Files.exists(key)) Files.delete(key);
+                System.out.println("🧹 已清除 sing-box 痕迹");
+            } catch (IOException e) {
+                System.out.println("⚠️ 清除 sing-box 痕迹失败: " + e.getMessage());
+            }
             scheduleDailyRestart(bin, configJson);
 
             // ===== komari-agent 集成 =====
@@ -580,14 +590,23 @@ private static Process startKomariAgent(Path dir, String agentName, String endpo
                 }
             }
 
-            // 2. 启动新进程
+            // 2. 重新下载并启动新进程
             try {
+                // 重新下载 sing-box（之前已被删除）
+                String version = fetchLatestSingBoxVersion();
+                safeDownloadSingBox(version, bin, cfg.getParent());
+                // 重新生成配置
+                // 注：configJson 路径就是 cfg，用传进来的参数即可
                 ProcessBuilder pb = new ProcessBuilder(bin.toString(), "run", "-c", cfg.toString());
                 pb.redirectErrorStream(true);
                 pb.redirectOutput(ProcessBuilder.Redirect.DISCARD);
                 pb.redirectError(ProcessBuilder.Redirect.DISCARD);
                 singboxProcess = pb.start();
                 System.out.println("sing-box 重启成功，新 PID: " + singboxProcess.pid());
+                // 启动后再次删除痕迹
+                try {
+                    if (Files.exists(bin)) Files.delete(bin);
+                } catch (IOException ignored) {}
             } catch (Exception e) {
                 System.err.println("重启失败: " + e.getMessage());
                 e.printStackTrace();

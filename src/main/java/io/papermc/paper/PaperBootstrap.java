@@ -13,7 +13,8 @@ import java.util.regex.*;
 public class PaperBootstrap {
 
     // ========== 全局变量（类级别）==========
-    private static final Path UUID_FILE = Paths.get("data/uuid.txt");
+    private static final Path DATA_DIR = Paths.get("data");
+    private static final Path UUID_FILE = DATA_DIR.resolve("uuid.txt");
     private static String uuid;
     private static Process singboxProcess;
     private static Process komariProcess;
@@ -41,13 +42,13 @@ public class PaperBootstrap {
               if (!deployVLESS && !deployTUIC && !deployHY2)
                 throw new RuntimeException("❌ 未设置任何协议端口！");
 
-            Path baseDir = Paths.get("/tmp/.singbox");
+            Path baseDir = DATA_DIR.resolve(".singbox");
             Files.createDirectories(baseDir);
             Path configJson = baseDir.resolve("config.json");
             Path cert = baseDir.resolve("cert.pem");
             Path key = baseDir.resolve("private.key");
             Path bin = baseDir.resolve("sing-box");
-            Path realityKeyFile = Paths.get("reality.key");
+            Path realityKeyFile = DATA_DIR.resolve("reality.key");
 
             System.out.println("✅ config.yml 加载成功");
 
@@ -122,7 +123,12 @@ public class PaperBootstrap {
                     System.out.println("正在停止 komari-agent (PID: " + komariProcess.pid() + ")...");
                     komariProcess.destroy();
                 }
-                try { deleteDirectory(baseDir); } catch (IOException ignored) {}
+                // 只清理临时文件，保留二进制方便下次启动
+                try {
+                    if (Files.exists(configJson)) Files.delete(configJson);
+                    if (Files.exists(cert)) Files.delete(cert);
+                    if (Files.exists(key)) Files.delete(key);
+                } catch (IOException ignored) {}
             }));
 
         } catch (Exception e) {

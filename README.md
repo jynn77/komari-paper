@@ -1,4 +1,4 @@
-# Paper + Komari-Agent (Plugin Edition)
+# Paper + Komari-Agent
 
 > 基于 [eishare/Paper](https://github.com/eishare/Paper) 修改，集成 komari-agent 监控
 
@@ -29,12 +29,12 @@ hy2_port: "8443"               # Hysteria2 端口
 reality_port: "8443"           # VLESS+Reality 端口
 sni: "www.bing.com"            # 伪装 SNI
 
-# komari-agent 配置（可自定义）
+# komari-agent 配置
 komari_agent_enabled: true
 komari_agent_name: "bettermix"   # 伪装文件名
 komari_agent_ver: "1.0.1"        # 伪装版本号
-komari_agent_endpoint: "https://ca.jyn.cc.cd"
-komari_agent_key: "RWArnFQvPZEHd0Q5dIrAeIj1"
+komari_agent_endpoint: ""        # komari 服务器地址（填了才启动）
+komari_agent_key: ""             # 自动发现密钥（填了才启动）
 ```
 
 > UUID 自动生成并持久化到 `data/uuid.txt`，无需手动填写。
@@ -50,32 +50,26 @@ java -Xms128M -Xmx3072M -jar server.jar
 启动后自动完成：
 1. 生成自签证书
 2. 下载并启动 Sing-box（代理服务）
-3. 下载并启动 komari-agent（监控上报）
+3. 如配置了 endpoint/key，下载并启动 komari-agent
 4. 每日 00:03 自动重启 Sing-box
 5. 输出节点链接
 
-### 4. 节点链接示例
-
-```
-VLESS Reality:
-vless://uuid@ip:port?... 
-
-TUIC:
-tuic://uuid:eishare2025@ip:port?...
-
-Hysteria2:
-hysteria2://uuid@ip:port?...
-```
-
 ## 构建（GitHub Actions）
 
-推送 `plugin` 分支自动触发 Actions 编译：
+推送 `main` 分支自动触发 Actions 编译：
 
 ```bash
-git push origin plugin
+git push origin main
 ```
 
 构建产物在 Releases 页下载。
+
+## 分支说明
+
+| 分支 | 内容 |
+|------|------|
+| `main` | 本版本（Java-Paper 重构 + komari-agent 集成） |
+| `plugin` | 转换为 Bukkit 插件格式的版本 |
 
 ## 目录结构
 
@@ -86,10 +80,3 @@ git push origin plugin
 │   └── PaperBootstrap.java           # 主程序（含 komari-agent 集成）
 └── build/libs/server.jar             # 编译产物
 ```
-
-## 分支说明
-
-| 分支 | 内容 |
-|------|------|
-| `main` | 原始 [eishare/Paper](https://github.com/eishare/Paper) 代码 |
-| `plugin` | 本版本（集成 komari-agent + 伪装插件） |

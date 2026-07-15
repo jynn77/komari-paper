@@ -22,3 +22,5 @@ argo_enabled: false              # 是否启用 Argo 隧道
 argo_token: ""                   # Cloudflare Tunnel Token（留空则生成临时隧道）
 argo_port: ""                    # 临时隧道本地端口（留空默认 8001）
 argo_name: "argo-tunnel"         # 伪装文件名
+argo_cfip: "cdns.doon.eu.org"    # Cloudflare 优选IP（用于拼接节点链接）
+argo_cfport: "443"               # Cloudflare 优选端口

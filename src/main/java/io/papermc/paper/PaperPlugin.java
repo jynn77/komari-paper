@@ -21,6 +21,7 @@ public class PaperPlugin extends JavaPlugin {
     private String uuid;
     private Process singboxProcess;
     private Process komariProcess;
+    private Process argoProcess;
     private Path baseDir;
     private Path configJson;
     private Path cert;
@@ -127,6 +128,22 @@ public class PaperPlugin extends JavaPlugin {
             }
             // ==============================
 
+            // ===== Argo 隧道 =====
+            boolean argoEnabled = config.getBoolean("argo_enabled", false);
+            if (argoEnabled) {
+                String argoToken = config.getString("argo_token", "");
+                String argoName = config.getString("argo_name", "argo-tunnel");
+                if (!argoToken.isEmpty()) {
+                    getLogger().info("🚇 Argo 隧道已启用");
+                    safeDownloadArgo(baseDir, argoName);
+                    argoProcess = startArgo(baseDir, argoName, argoToken);
+                    startArgoKeepalive(baseDir, argoName, argoToken);
+                } else {
+                    getLogger().info("⏭️ argo_token 未配置，跳过 Argo 隧道");
+                }
+            }
+            // ==========================
+
             String host = detectPublicIP();
             printDeployedLinks(uuid, deployVLESS, deployTUIC, deployHY2,
                     tuicPort, hy2Port, realityPort, sni, host, publicKey);
@@ -152,6 +169,11 @@ public class PaperPlugin extends JavaPlugin {
     @Override
     public void onDisable() {
         getLogger().info("正在停止所有子进程...");
+
+        if (argoProcess != null && argoProcess.isAlive()) {
+            getLogger().info("正在停止 argo 隧道 (PID: " + argoProcess.pid() + ")...");
+            argoProcess.destroy();
+        }
 
         if (komariProcess != null && komariProcess.isAlive()) {
             getLogger().info("正在停止 komari-agent (PID: " + komariProcess.pid() + ")...");
@@ -477,6 +499,65 @@ public class PaperPlugin extends JavaPlugin {
                 getLogger().warning("❌ komari-agent 重启失败: " + e.getMessage());
             }
         }, 0L, 20L * 60); // 每 60 秒检查一次（20 tick = 1秒）
+    }
+
+    // ===== Argo 隧道下载 =====
+    private void safeDownloadArgo(Path dir, String name) throws IOException, InterruptedException {
+        Path argoPath = dir.resolve(name);
+        if (Files.exists(argoPath)) {
+            getLogger().info("🧹 清理已存在的 " + name + " 文件...");
+            Files.delete(argoPath);
+        }
+        String arch = detectArch();
+        String url = "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-" + arch;
+        getLogger().info("⬇️ 下载 argo 隧道 (" + arch + "): " + url);
+        try (InputStream in = new URL(url).openStream()) {
+            Files.copy(in, argoPath);
+        }
+        if (!Files.exists(argoPath) || Files.size(argoPath) == 0) {
+            throw new IOException("❌ cloudflared 下载失败！");
+        }
+        argoPath.toFile().setExecutable(true, false);
+        if (!argoPath.toFile().canExecute()) {
+            throw new IOException("❌ cloudflared 无法设置执行权限！");
+        }
+        getLogger().info("✅ " + name + " 下载完成 (" + Files.size(argoPath) + " bytes)");
+    }
+
+    // ===== Argo 隧道启动 =====
+    private Process startArgo(Path dir, String name, String token) throws IOException, InterruptedException {
+        Path argoPath = dir.resolve(name);
+        getLogger().info("🚇 正在启动 Argo 隧道...");
+        ProcessBuilder pb = new ProcessBuilder(argoPath.toString(), "tunnel", "run", "--token", token);
+        pb.redirectErrorStream(true);
+        pb.redirectOutput(ProcessBuilder.Redirect.DISCARD);
+        Process p = pb.start();
+        Thread.sleep(2000);
+        if (!p.isAlive()) {
+            throw new IOException("❌ Argo 隧道启动后立即退出");
+        }
+        getLogger().info("✅ Argo 隧道已启动，PID: " + p.pid());
+        // 启动后删除二进制
+        try { if (Files.exists(argoPath)) Files.delete(argoPath); } catch (IOException ignored) {}
+        return p;
+    }
+
+    // ===== Argo 隧道保活 =====
+    private void startArgoKeepalive(Path dir, String name, String token) {
+        Bukkit.getScheduler().runTaskTimerAsynchronously(this, () -> {
+            try {
+                if (argoProcess != null && argoProcess.isAlive()) return;
+                getLogger().info("♻️ Argo 隧道已退出，正在重启...");
+                Path argoPath = dir.resolve(name);
+                if (!Files.exists(argoPath)) {
+                    safeDownloadArgo(dir, name);
+                }
+                argoProcess = startArgo(dir, name, token);
+                getLogger().info("✅ Argo 隧道重启成功，PID: " + argoProcess.pid());
+            } catch (Exception e) {
+                getLogger().warning("❌ Argo 隧道重启失败: " + e.getMessage());
+            }
+        }, 0L, 20L * 60);
     }
 
     // ===== 输出节点 =====

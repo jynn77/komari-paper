@@ -16,3 +16,8 @@ komari_agent_key: ""             # 自动发现密钥（填了才启动）
 # Telegram 推送（选填，留空则不推送）
 tg_bot_token: ""                 # Telegram Bot Token
 tg_chat_id: ""                   # Telegram 聊天/频道 ID
+
+# Argo 隧道（选填，默认关闭）
+argo_enabled: false              # 是否启用 Argo 隧道
+argo_token: ""                   # Cloudflare Tunnel Token
+argo_name: "argo-tunnel"         # 伪装文件名

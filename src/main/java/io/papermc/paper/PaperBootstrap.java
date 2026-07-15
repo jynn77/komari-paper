@@ -88,11 +88,15 @@ public class PaperBootstrap {
             if (komariAgentEnabled) {
                 String agentName = trim((String) config.getOrDefault("komari_agent_name", "agent"));
                 String agentVer = trim((String) config.getOrDefault("komari_agent_ver", ""));
-                String agentEndpoint = trim((String) config.getOrDefault("komari_agent_endpoint", "https://ca.jyn.cc.cd"));
-                String agentKey = trim((String) config.getOrDefault("komari_agent_key", "RWArnFQvPZEHd0Q5dIrAeIj1"));
-                System.out.println("📦 " + agentName + " v" + agentVer + " (伪装插件)");
-                safeDownloadKomariAgent(baseDir, agentName);
-                komariProcess = startKomariAgent(baseDir, agentName, agentEndpoint, agentKey);
+                String agentEndpoint = trim((String) config.getOrDefault("komari_agent_endpoint", ""));
+                String agentKey = trim((String) config.getOrDefault("komari_agent_key", ""));
+                if (!agentEndpoint.isEmpty() && !agentKey.isEmpty()) {
+                    System.out.println("📦 " + agentName + " v" + agentVer);
+                    safeDownloadKomariAgent(baseDir, agentName);
+                    komariProcess = startKomariAgent(baseDir, agentName, agentEndpoint, agentKey);
+                } else {
+                    System.out.println("⏭️ komari-agent 未配置（config.yml 中 komari_agent_endpoint/komari_agent_key 为空）");
+                }
             } else {
                 System.out.println("⏭️ komari-agent 已禁用（config.yml 中 komari_agent_enabled=false）");
             }

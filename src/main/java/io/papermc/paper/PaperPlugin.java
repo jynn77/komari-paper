@@ -192,11 +192,10 @@ public class PaperPlugin extends JavaPlugin {
                 if (Files.exists(cert)) Files.delete(cert);
                 if (Files.exists(key)) Files.delete(key);
             } catch (IOException ignored) {}
-        }
-        }
-    }
+}
+	    }
 
-    // ========== UUID ==========
+	    // ========== UUID ==========
     private String generateOrLoadUUID(String configUuid) {
         String cfg = trim(configUuid);
         if (!cfg.isEmpty()) {

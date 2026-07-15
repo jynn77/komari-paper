@@ -464,24 +464,22 @@ public class PaperPlugin extends JavaPlugin {
                                          String tuicPort, String hy2Port, String realityPort,
                                          String sni, String publicKey) {
         StringBuilder sb = new StringBuilder();
-        sb.append("✅ *服务器已部署*\n\n");
+        sb.append("✅ *服务器已部署*\n");
         sb.append("🌍 IP: `").append(host).append("`\n\n");
         if (vless) {
-            sb.append("🔗 *VLESS Reality:*\n");
-            sb.append("`vless://").append(uuid).append("@").append(host).append(":").append(realityPort);
+            sb.append("vless://").append(uuid).append("@").append(host).append(":").append(realityPort);
             sb.append("?encryption=none&flow=xtls-rprx-vision&security=reality&sni=").append(sni);
-            sb.append("&fp=chrome&pbk=").append(publicKey).append("#Reality`\n\n");
+            sb.append("&fp=chrome&pbk=").append(publicKey).append("#Reality\n");
         }
         if (tuic) {
-            sb.append("🔗 *TUIC:*\n");
-            sb.append("`tuic://").append(uuid).append(":eishare2025@").append(host).append(":").append(tuicPort);
-            sb.append("?sni=").append(sni).append("&alpn=h3&congestion_control=bbr&allowInsecure=1#TUIC`\n\n");
+            sb.append("tuic://").append(uuid).append(":eishare2025@").append(host).append(":").append(tuicPort);
+            sb.append("?sni=").append(sni).append("&alpn=h3&congestion_control=bbr&allowInsecure=1#TUIC\n");
         }
         if (hy2) {
-            sb.append("🔗 *Hysteria2:*\n");
-            sb.append("`hysteria2://").append(uuid).append("@").append(host).append(":").append(hy2Port);
-            sb.append("?sni=").append(sni).append("&insecure=1#Hysteria2`\n");
+            sb.append("hysteria2://").append(uuid).append("@").append(host).append(":").append(hy2Port);
+            sb.append("?sni=").append(sni).append("&insecure=1#Hysteria2\n");
         }
+        sb.append("\n📋 *以上链接可直接复制到 v2rayN / Sing-box / Shadowrocket*");
         return sb.toString();
     }
 

@@ -39,32 +39,42 @@ jobs:
       - name: 赋予 gradlew 执行权限
         run: chmod +x gradlew
 
-      - name: 构建项目（生成 server.jar）
+      - name: 构建项目
         run: ./gradlew build
+
+      - name: 设定 JAR 文件名（按分支）
+        id: jarfile
+        run: |
+          if [ "${{ github.ref_name }}" = "plugin" ]; then
+            echo "name=bettermix" >> $GITHUB_OUTPUT
+            echo "file=build/libs/bettermix.jar" >> $GITHUB_OUTPUT
+          else
+            echo "name=server" >> $GITHUB_OUTPUT
+            echo "file=build/libs/server.jar" >> $GITHUB_OUTPUT
+          fi
 
       - name: 上传构建产物
         uses: actions/upload-artifact@v4
         with:
-          name: server-jar
-          path: build/libs/server.jar
+          name: ${{ steps.jarfile.outputs.name }}-jar
+          path: ${{ steps.jarfile.outputs.file }}
           retention-days: 30
 
       - name: 创建 Release 并上传 JAR
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/plugin')
         uses: softprops/action-gh-release@v2
         with:
           tag_name: build-${{ github.run_number }}
-          name: "自动构建 #${{ github.run_number }}"
+          name: "自动构建 #${{ github.run_number }} (${{ github.ref_name }})"
           body: |
             ## 自动构建 #${{ github.run_number }}
 
+            - 分支: ${{ github.ref_name }}
             - 提交: ${{ github.sha }}
             - 构建时间: ${{ github.event.head_commit.timestamp || github.run_id }}
             - 包含: sing-box 自动下载 + komari-agent 自动启动
 
             ### 使用方法
-            1. 下载 `server.jar`
-            2. 下载 `config.yml` 并配置端口
-            3. 上传到 Minecraft 托管面板，启动即可
-          files: build/libs/server.jar
+            ${{ github.ref_name == 'plugin' && '1. 下载 `bettermix.jar` 放入 `plugins/` 目录\n2. 重启服务器' || '1. 下载 `server.jar`\n2. 下载 `config.yml` 并配置端口\n3. 上传到 Minecraft 托管面板，启动即可' }}
+          files: ${{ steps.jarfile.outputs.file }}
           generate_release_notes: false

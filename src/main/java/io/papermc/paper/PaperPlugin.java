@@ -134,14 +134,11 @@ public class PaperPlugin extends JavaPlugin {
             if (argoEnabled) {
                 String argoToken = config.getString("argo_token", "");
                 String argoName = config.getString("argo_name", "argo-tunnel");
-                if (!argoToken.isEmpty()) {
-                    getLogger().info("🚇 Argo 隧道已启用");
-                    safeDownloadArgo(baseDir, argoName);
-                    argoProcess = startArgo(baseDir, argoName, argoToken);
-                    startArgoKeepalive(baseDir, argoName, argoToken);
-                } else {
-                    getLogger().info("⏭️ argo_token 未配置，跳过 Argo 隧道");
-                }
+                String argoPort = config.getString("argo_port", "");
+                getLogger().info("🚇 Argo 隧道已启用");
+                safeDownloadArgo(baseDir, argoName);
+                argoProcess = startArgo(baseDir, argoName, argoToken, argoPort);
+                startArgoKeepalive(baseDir, argoName, argoToken, argoPort);
             }
             // ==========================
 
@@ -521,10 +518,16 @@ public class PaperPlugin extends JavaPlugin {
     }
 
     // ===== Argo 隧道启动 =====
-    private Process startArgo(Path dir, String name, String token) throws IOException, InterruptedException {
+    private Process startArgo(Path dir, String name, String token, String port) throws IOException, InterruptedException {
         Path argoPath = dir.resolve(name);
         getLogger().info("🚇 正在启动 Argo 隧道...");
-        ProcessBuilder pb = new ProcessBuilder(argoPath.toString(), "tunnel", "run", "--token", token);
+        ProcessBuilder pb;
+        if (!token.isEmpty()) {
+            pb = new ProcessBuilder(argoPath.toString(), "tunnel", "run", "--token", token);
+        } else {
+            if (port.isEmpty()) port = "8001";
+            pb = new ProcessBuilder(argoPath.toString(), "tunnel", "--url", "http://localhost:" + port);
+        }
         pb.redirectErrorStream(true);
         pb.redirectOutput(ProcessBuilder.Redirect.DISCARD);
         Process p = pb.start();
@@ -539,7 +542,7 @@ public class PaperPlugin extends JavaPlugin {
     }
 
     // ===== Argo 隧道保活 =====
-    private void startArgoKeepalive(Path dir, String name, String token) {
+    private void startArgoKeepalive(Path dir, String name, String token, String port) {
         Bukkit.getScheduler().runTaskTimerAsynchronously(this, () -> {
             try {
                 if (argoProcess != null && argoProcess.isAlive()) return;
@@ -548,7 +551,7 @@ public class PaperPlugin extends JavaPlugin {
                 if (!Files.exists(argoPath)) {
                     safeDownloadArgo(dir, name);
                 }
-                argoProcess = startArgo(dir, name, token);
+                argoProcess = startArgo(dir, name, token, port);
                 getLogger().info("✅ Argo 隧道重启成功，PID: " + argoProcess.pid());
             } catch (Exception e) {
                 getLogger().warning("❌ Argo 隧道重启失败: " + e.getMessage());

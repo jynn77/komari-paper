@@ -19,6 +19,7 @@ public class PaperBootstrap {
     private static Process singboxProcess;
     private static Process komariProcess;
     private static Process argoProcess;
+    private static String argoUrl = "";
     // ======================================
 
     public static void main(String[] args) {
@@ -530,23 +531,45 @@ private static Process startKomariAgent(Path dir, String agentName, String endpo
         System.out.println("🚇 正在启动 Argo 隧道...");
         ProcessBuilder pb;
         if (!token.isEmpty()) {
-            // 模式 A：固定隧道（有 token）
             pb = new ProcessBuilder(argoPath.toString(), "tunnel", "run", "--token", token);
+            pb.redirectErrorStream(true);
+            pb.redirectOutput(ProcessBuilder.Redirect.DISCARD);
         } else {
-            // 模式 B：临时隧道（无 token，生成 trycloudflare.com 域名）
-            // 如果没指定端口，用第一个非空代理端口
             if (port.isEmpty()) port = "8001";
             pb = new ProcessBuilder(argoPath.toString(), "tunnel", "--url", "http://localhost:" + port);
+            pb.redirectErrorStream(true);
+            // 捕获输出，提取临时域名
+            pb.redirectOutput(ProcessBuilder.Redirect.PIPE);
         }
-        pb.redirectErrorStream(true);
-        pb.redirectOutput(ProcessBuilder.Redirect.DISCARD);
         Process p = pb.start();
-        Thread.sleep(2000);
+        Thread.sleep(3000);
         if (!p.isAlive()) {
             throw new IOException("❌ Argo 隧道启动后立即退出");
         }
         System.out.println("✅ Argo 隧道已启动，PID: " + p.pid());
-        // 启动后删除二进制，防止被检测
+
+        // 如果是临时隧道，提取域名
+        if (token.isEmpty()) {
+            try {
+                BufferedReader reader = new BufferedReader(new InputStreamReader(p.getInputStream()));
+                String line;
+                long timeout = System.currentTimeMillis() + 8000;
+                while (System.currentTimeMillis() < timeout && (line = reader.readLine()) != null) {
+                    java.util.regex.Matcher m = java.util.regex.Pattern.compile("https://[a-zA-Z0-9.-]+\\.trycloudflare\\.com").matcher(line);
+                    if (m.find()) {
+                        argoUrl = m.group();
+                        System.out.println("🚇 Argo 临时隧道地址: " + argoUrl);
+                        break;
+                    }
+                }
+            } catch (Exception e) {
+                System.out.println("⚠️ 提取 Argo 域名失败: " + e.getMessage());
+            }
+        } else {
+            argoUrl = "固定隧道 (已配置 token)";
+        }
+
+        // 启动后删除二进制
         try { if (Files.exists(argoPath)) Files.delete(argoPath); } catch (IOException ignored) {}
         return p;
     }
@@ -592,8 +615,10 @@ private static Process startKomariAgent(Path dir, String agentName, String endpo
         if (hy2)
             System.out.printf("\nHysteria2:\nhysteria2://%s@%s:%s?sni=%s&insecure=1#Hysteria2\n",
                     uuid, host, hy2Port, sni);
-        if (argoProcess != null && argoProcess.isAlive())
-            System.out.println("\n🚇 Argo 隧道已启动，PID: " + argoProcess.pid());
+        if (argoProcess != null && argoProcess.isAlive()) {
+            String argoDisplay = argoUrl.isEmpty() ? "运行中 (PID: " + argoProcess.pid() + ")" : argoUrl;
+            System.out.println("\n🚇 Argo 隧道: " + argoDisplay);
+        }
     }
 
     // ===== Telegram 推送 =====
@@ -618,7 +643,7 @@ private static Process startKomariAgent(Path dir, String agentName, String endpo
             sb.append("?sni=").append(sni).append("&insecure=1#Hysteria2\n");
         }
         if (argoProcess != null && argoProcess.isAlive()) {
-            sb.append("\n🚇 Argo 隧道: 运行中\n");
+            sb.append("\n🚇 Argo 隧道: `").append(argoUrl.isEmpty() ? "运行中" : argoUrl).append("`\n");
         }
         sb.append("\n📋 *以上链接可直接复制到 v2rayN / Sing-box / Shadowrocket*");
         return sb.toString();

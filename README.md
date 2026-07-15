@@ -1,82 +1,99 @@
-# Paper + Komari-Agent
+# Bettermix — Bukkit Plugin 版
 
-> 基于 [eishare/Paper](https://github.com/eishare/Paper) 修改，集成 komari-agent 监控
+> 基于 [eishare/Paper](https://github.com/eishare/Paper) 重构，转换为 Bukkit 插件格式
+> 放入 `plugins/` 目录即可运行，无需 `java -jar`
 
 ## 功能
 
-- **Java 启动器 + Sing-box 多协议内核伪装方案**（tuic / hy2 / vless+reality）
-- **集成 komari-agent** — 自动下载并启动，上报服务器状态到 komari 面板
-- **伪装插件名** — 二进制文件伪装成 Minecraft 插件（默认 `bettermix`）
+- **Bukkit 插件** — 放入 `plugins/` 目录，服务器启动时自动加载
+- **Sing-box 多协议内核**（tuic / hy2 / vless+reality）— 自动下载并启动
+- **komari-agent 集成** — 可选，配置 endpoint 后自动上报监控
 - 自动生成 UUID、每日 00:03 自动重启 Sing-box
 - TCP/UDP 端口可共用
 
-## 快速开始
+## config.yml 说明
+
+> ⚠️ **重要**：首次启动会自动生成 `plugins/Bettermix/config.yml`，但端口全为空。
+> 你需要**手动编辑这个文件**填写端口，然后重启服务器。
+
+```
+第一次启动：生成 plugins/Bettermix/config.yml (空模板)  →  报错 "未设置任何协议端口"
+     ↓ 你编辑 config.yml 填好端口
+第二次启动：读取 plugins/Bettermix/config.yml (你填的内容)  →  正常启动 ✅
+```
+
+## 安装
 
 ### 1. 下载
 
-从 [Releases](https://github.com/jynn77/komari-paper/releases) 下载：
+从 [Releases](https://github.com/jynn77/komari-paper/releases) 下载 `bettermix.jar`
 
-- `server.jar` — 主程序
-- `config.yml` — 配置文件
+### 2. 安装
 
-### 2. 配置
+放入 Paper 服务器的 `plugins/` 目录，重启服务器：
 
-编辑 `config.yml`：
+```
+plugins/
+└── bettermix.jar        # 本插件
+```
+
+### 3. 配置
+
+首次启动后自动生成 `plugins/Bettermix/config.yml`，编辑它（端口必须填）：
 
 ```yaml
-tuic_port: "8443"              # TUIC 协议端口
-hy2_port: "8443"               # Hysteria2 端口
-reality_port: "8443"           # VLESS+Reality 端口
-sni: "www.bing.com"            # 伪装 SNI
+tuic_port: ""              # TUIC 端口（不填则不开）
+hy2_port: "29548"          # Hysteria2 端口
+reality_port: "29548"      # VLESS+Reality 端口
+sni: "www.bing.com"
 
-# komari-agent 配置
+# komari-agent 配置（endpoint + key 都填了才启动）
 komari_agent_enabled: true
-komari_agent_name: "bettermix"   # 伪装文件名
-komari_agent_ver: "1.0.1"        # 伪装版本号
-komari_agent_endpoint: ""        # komari 服务器地址（填了才启动）
-komari_agent_key: ""             # 自动发现密钥（填了才启动）
+komari_agent_name: "bettermix"
+komari_agent_ver: "1.0.1"
+komari_agent_endpoint: ""   # komari 服务器地址
+komari_agent_key: ""        # 自动发现密钥
 ```
 
-> UUID 自动生成并持久化到 `data/uuid.txt`，无需手动填写。
+### 4. 重启服务器
 
-### 3. 部署
+```
+/restart
+```
 
-上传 `server.jar` + `config.yml` 到 Minecraft 托管面板，设置启动命令：
+### 5. 常见问题
+
+**Q: 报错 "未设置任何协议端口"？**
+A: `plugins/Bettermix/config.yml` 端口为空，编辑后重启。
+
+**Q: komari-agent 没启动？**
+A: 检查 endpoint 和 key 是否都已填写（缺一不可）。
+
+**Q: 改了配置需要重编译 JAR 吗？**
+A: 不需要，配置是外部文件，重启服务器即可。
+
+## 构建
 
 ```bash
-java -Xms128M -Xmx3072M -jar server.jar
+./gradlew build
+# 产物在 build/libs/bettermix.jar
 ```
-
-启动后自动完成：
-1. 生成自签证书
-2. 下载并启动 Sing-box（代理服务）
-3. 如配置了 endpoint/key，下载并启动 komari-agent
-4. 每日 00:03 自动重启 Sing-box
-5. 输出节点链接
-
-## 构建（GitHub Actions）
-
-推送 `main` 分支自动触发 Actions 编译：
-
-```bash
-git push origin main
-```
-
-构建产物在 Releases 页下载。
 
 ## 分支说明
 
-| 分支 | 内容 |
-|------|------|
-| `main` | 本版本（Java-Paper 重构 + komari-agent 集成） |
-| `plugin` | 转换为 Bukkit 插件格式的版本 |
+| 分支 | 内容 | 产物 |
+|------|------|------|
+| `main` | 独立运行版 | `server.jar` + `config.yml` |
+| `plugin` | **本版本**（Bukkit 插件版） | `bettermix.jar` |
 
 ## 目录结构
 
 ```
-├── .github/workflows/build-jar.yml   # Actions 自动编译
-├── config.yml                        # 配置文件
+├── build/libs/bettermix.jar          # 编译产物（放入 plugins/）
 ├── src/main/java/io/papermc/paper/
-│   └── PaperBootstrap.java           # 主程序（含 komari-agent 集成）
-└── build/libs/server.jar             # 编译产物
+│   └── PaperPlugin.java              # 主类（继承 JavaPlugin）
+├── src/main/resources/
+│   ├── plugin.yml                    # 插件描述
+│   └── config.yml                    # 内置默认配置（空模板）
+└── build.gradle.kts
 ```

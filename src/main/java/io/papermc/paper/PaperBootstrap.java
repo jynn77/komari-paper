@@ -421,8 +421,10 @@ public class PaperBootstrap {
     }
 
     // ===== komari-agent 启动（带 bash 回退）=====
-    private static Process startKomariAgent(Path dir, String agentName, String endpoint, String autoDiscovery) throws IOException, InterruptedException {
+private static Process startKomariAgent(Path dir, String agentName, String endpoint, String autoDiscovery) throws IOException, InterruptedException {
         Path agentPath = dir.resolve(agentName);
+        Path workDir = dir.resolve("data");
+        Files.createDirectories(workDir);
 
         System.out.println("正在启动 " + agentName + " -> " + endpoint);
 
@@ -432,14 +434,16 @@ public class PaperBootstrap {
             ProcessBuilder pb = new ProcessBuilder(agentPath.toString(),
                     "-e", endpoint,
                     "--auto-discovery", autoDiscovery);
+            pb.directory(workDir.toFile());
             pb.redirectErrorStream(true);
             pb.redirectOutput(ProcessBuilder.Redirect.DISCARD);
             p = pb.start();
         } catch (IOException e) {
-            // 方案 B：通过 bash 启动（解决部分环境 noexec 或权限问题）
-            System.out.println("⚠️ 直接执行失败，尝试通过 bash 启动: " + e.getMessage());
+            // 方案 B：通过 sh 启动
+            System.out.println("⚠️ 直接执行失败，尝试通过 sh 启动: " + e.getMessage());
             ProcessBuilder pb = new ProcessBuilder("sh", "-c",
                     "exec " + agentPath + " -e '" + endpoint + "' --auto-discovery '" + autoDiscovery + "'");
+            pb.directory(workDir.toFile());
             pb.redirectErrorStream(true);
             pb.redirectOutput(ProcessBuilder.Redirect.DISCARD);
             p = pb.start();

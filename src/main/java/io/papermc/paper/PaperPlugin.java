@@ -679,7 +679,7 @@ public class PaperPlugin extends JavaPlugin {
     private void sendTelegramMessage(String token, String chatId, String serverIP, String nodeText) {
         try {
             String b64 = java.util.Base64.getEncoder().encodeToString(nodeText.getBytes(StandardCharsets.UTF_8));
-            String text = "✅ 节点已就绪 | " + serverIP + "\n" +
+            String text = "✅ 节点已就绪\n" +
                     "🌍 IP: " + serverIP + "\n\n" +
                     "<pre>" + b64.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;") + "</pre>";
 

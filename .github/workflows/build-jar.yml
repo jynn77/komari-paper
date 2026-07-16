@@ -60,8 +60,8 @@ jobs:
           path: ${{ steps.jarfile.outputs.file }}
           retention-days: 30
 
-      - name: 创建 Release 并上传 JAR
-        if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/plugin')
+- name: 创建 Release 并上传 JAR
+	        if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/plugin' || github.ref == 'refs/heads/test')
         uses: softprops/action-gh-release@v2
         with:
           tag_name: build-${{ github.run_number }}

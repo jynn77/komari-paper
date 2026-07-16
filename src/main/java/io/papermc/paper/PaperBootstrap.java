@@ -132,6 +132,7 @@ public class PaperBootstrap {
             // ==========================
 
             String host = detectPublicIP();
+            String nodePrefix = trim((String) config.getOrDefault("node_name", ""));
             String argoCfip = trim((String) config.getOrDefault("argo_cfip", "saas.sin.fan"));
             printDeployedLinks(uuid, deployVLESS, deployTUIC, deployHY2,
                     tuicPort, hy2Port, realityPort, sni, host, publicKey, argoUrl, argoCfip);
@@ -140,9 +141,10 @@ public class PaperBootstrap {
             String tgToken = trim((String) config.getOrDefault("tg_bot_token", ""));
             String tgChatId = trim((String) config.getOrDefault("tg_chat_id", ""));
             if (!tgToken.isEmpty() && !tgChatId.isEmpty()) {
-                String nodeText = buildTelegramNodes(uuid, host, deployVLESS, deployTUIC, deployHY2,
+                String nodeName = getNodeName(nodePrefix, host);
+                String nodeText = buildTelegramNodes(uuid, host, nodeName, deployVLESS, deployTUIC, deployHY2,
                         tuicPort, hy2Port, realityPort, sni, publicKey, argoCfip, argoUrl);
-                sendTelegramMessage(tgToken, tgChatId, host, nodeText);
+                sendTelegramMessage(tgToken, tgChatId, host, nodeName, nodeText);
             }
             // ==========================
 
@@ -627,6 +629,41 @@ private static Process startKomariAgent(Path dir, String agentName, String endpo
         }
     }
 
+    private static String getNodeName(String name, String host) {
+        String isp = fetchISP();
+        return name.isEmpty() ? isp : name + "-" + isp;
+    }
+
+    private static String fetchISP() {
+        try {
+            HttpURLConnection conn = (HttpURLConnection) new URL("https://api.ip.sb/geoip").openConnection();
+            conn.setConnectTimeout(3000);
+            conn.setReadTimeout(3000);
+            try (BufferedReader br = new BufferedReader(new InputStreamReader(conn.getInputStream()))) {
+                String json = br.lines().collect(Collectors.joining());
+                java.util.regex.Matcher m1 = java.util.regex.Pattern.compile("\"country_code\":\"([^\"]*)\"").matcher(json);
+                java.util.regex.Matcher m2 = java.util.regex.Pattern.compile("\"isp\":\"([^\"]*)\"").matcher(json);
+                if (m1.find() && m2.find()) {
+                    return (m1.group(1) + "-" + m2.group(1)).replace(' ', '_');
+                }
+            }
+        } catch (Exception ignored) {}
+        try {
+            HttpURLConnection conn = (HttpURLConnection) new URL("https://ip-api.com/json?fields=33280").openConnection();
+            conn.setConnectTimeout(3000);
+            conn.setReadTimeout(3000);
+            try (BufferedReader br = new BufferedReader(new InputStreamReader(conn.getInputStream()))) {
+                String json = br.lines().collect(Collectors.joining());
+                java.util.regex.Matcher m1 = java.util.regex.Pattern.compile("\"countryCode\":\"([^\"]*)\"").matcher(json);
+                java.util.regex.Matcher m2 = java.util.regex.Pattern.compile("\"org\":\"([^\"]*)\"").matcher(json);
+                if (m1.find() && m2.find()) {
+                    return (m1.group(1) + "-" + m2.group(1)).replace(' ', '_');
+                }
+            }
+        } catch (Exception ignored) {}
+        return "Unknown";
+    }
+
     private static void printDeployedLinks(String uuid, boolean vless, boolean tuic, boolean hy2,
                                            String tuicPort, String hy2Port, String realityPort,
                                            String sni, String host, String publicKey, String argoUrl, String argoCfip) {
@@ -647,9 +684,9 @@ private static Process startKomariAgent(Path dir, String agentName, String endpo
     }
 
     // ===== VMess Argo 节点链接生成（base64 JSON 格式，可粘贴到 v2rayN）=====
-    private static String buildVmessArgoLink(String uuid, String argoDomain, String argoCfip) {
+    private static String buildVmessArgoLink(String uuid, String argoDomain, String argoCfip, String nodeName) {
         try {
-            String json = "{\"v\":\"2\",\"ps\":\"VMess-Argo\",\"add\":\"" + argoCfip + "\",\"port\":\"443\",\"id\":\""
+            String json = "{\"v\":\"2\",\"ps\":\"" + nodeName + "-Argo\",\"add\":\"" + argoCfip + "\",\"port\":\"443\",\"id\":\""
                     + uuid + "\",\"aid\":\"0\",\"scy\":\"auto\",\"net\":\"ws\",\"type\":\"none\",\"host\":\""
                     + argoDomain + "\",\"path\":\"/vmess-argo?ed=2560\",\"tls\":\"tls\",\"sni\":\""
                     + argoDomain + "\",\"alpn\":\"\",\"fp\":\"firefox\"}";
@@ -660,7 +697,7 @@ private static Process startKomariAgent(Path dir, String agentName, String endpo
     }
 
     // ===== Telegram 推送 =====
-    private static String buildTelegramNodes(String uuid, String host,
+    private static String buildTelegramNodes(String uuid, String host, String nodeName,
                                               boolean vless, boolean tuic, boolean hy2,
                                               String tuicPort, String hy2Port, String realityPort,
                                               String sni, String publicKey,
@@ -671,31 +708,31 @@ private static Process startKomariAgent(Path dir, String agentName, String endpo
         if (vless) {
             sb.append("vless://").append(uuid).append("@").append(host).append(":").append(realityPort);
             sb.append("?encryption=none&flow=xtls-rprx-vision&security=reality&sni=").append(sni);
-            sb.append("&fp=chrome&pbk=").append(publicKey).append("&type=tcp&headerType=none#VLESS-Reality\n");
+            sb.append("&fp=chrome&pbk=").append(publicKey).append("&type=tcp&headerType=none").append("#").append(nodeName).append("-Reality\n");
         }
         if (tuic) {
             sb.append("tuic://").append(uuid).append(":eishare2025@").append(host).append(":").append(tuicPort);
-            sb.append("?sni=").append(sni).append("&alpn=h3&congestion_control=bbr&allowInsecure=1#TUIC\n");
+            sb.append("?sni=").append(sni).append("&alpn=h3&congestion_control=bbr&allowInsecure=1").append("#").append(nodeName).append("-TUIC\n");
         }
         if (hy2) {
             sb.append("hysteria2://").append(uuid).append("@").append(host).append(":").append(hy2Port);
-            sb.append("?sni=").append(sni).append("&insecure=1&alpn=h3&obfs=none#Hysteria2\n");
+            sb.append("?sni=").append(sni).append("&insecure=1&alpn=h3&obfs=none").append("#").append(nodeName).append("-Hysteria2\n");
         }
         // VMess Argo 节点（通过 Cloudflare 隧道）
         if (!argoUrl.isEmpty() && !argoUrl.contains("固定隧道")) {
-            String node = buildVmessArgoLink(uuid, argoUrl, argoCfip);
+            String node = buildVmessArgoLink(uuid, argoUrl, argoCfip, nodeName);
             sb.append(node).append("\n");
         }
         return sb.toString().trim();
     }
 
-    private static void sendTelegramMessage(String token, String chatId, String serverIP, String nodeText) {
+    private static void sendTelegramMessage(String token, String chatId, String serverIP, String nodeName, String nodeText) {
         try {
             // base64 编码节点链接
             String b64 = java.util.Base64.getEncoder().encodeToString(nodeText.getBytes(StandardCharsets.UTF_8));
 
-            // 拼接 HTML 格式消息（对应 sing-box-bot 风格）
-            String text = "✅ 节点已就绪\n" +
+            // 拼接 HTML 格式消息
+            String text = "✅ 节点已就绪 | " + nodeName + "\n" +
                     "🌍 IP: " + serverIP + "\n\n" +
                     "<pre>" + b64.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;") + "</pre>";
 

@@ -11,6 +11,7 @@ komari_agent_endpoint: ""   # komari 服务器地址（留空则不启动）
 komari_agent_key: ""        # komari 自动发现密钥（留空则不启动）
 tg_bot_token: ""             # Telegram Bot Token（留空则不推送）
 tg_chat_id: ""               # Telegram 聊天/频道 ID（留空则不推送）
+node_name: ""                # 节点名称前缀（留空则自动使用 IP归属地-ISP，如 CN-Telecom）
 argo_enabled: false          # 是否启用 Argo 隧道（默认 false）
 argo_token: ""               # Cloudflare Tunnel Token（留空则生成临时隧道）
 argo_port: ""                # 临时隧道本地端口（留空自动检测，默认 8001）

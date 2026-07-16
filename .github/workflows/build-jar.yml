@@ -2,10 +2,10 @@ name: Build server.jar
 
 on:
   push:
-    branches: [ "main", "plugin" ]
+    branches: [ "main", "plugin", "test" ]
   pull_request:
     branches: [ "main", "plugin" ]
-  workflow_dispatch:          # 支持手动触发
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -45,7 +45,7 @@ jobs:
       - name: 设定 JAR 文件名（按分支）
         id: jarfile
         run: |
-          if [ "${{ github.ref_name }}" = "plugin" ]; then
+          if [ "${{ github.ref_name }}" = "plugin" ] || [ "${{ github.ref_name }}" = "test" ]; then
             echo "name=bettermix" >> $GITHUB_OUTPUT
             echo "file=build/libs/bettermix.jar" >> $GITHUB_OUTPUT
           else
@@ -60,8 +60,8 @@ jobs:
           path: ${{ steps.jarfile.outputs.file }}
           retention-days: 30
 
-- name: 创建 Release 并上传 JAR
-	        if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/plugin' || github.ref == 'refs/heads/test')
+      - name: 创建 Release 并上传 JAR
+        if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/plugin' || github.ref == 'refs/heads/test')
         uses: softprops/action-gh-release@v2
         with:
           tag_name: build-${{ github.run_number }}

@@ -631,8 +631,8 @@ public class PaperPlugin extends JavaPlugin {
             conn.setReadTimeout(3000);
             try (BufferedReader br = new BufferedReader(new InputStreamReader(conn.getInputStream()))) {
                 String json = br.lines().collect(Collectors.joining());
-                java.util.regex.Matcher m1 = java.util.regex.Pattern.compile("\"country_code\":\"([^\"]*)\"").matcher(json);
-                java.util.regex.Matcher m2 = java.util.regex.Pattern.compile("\"isp\":\"([^\"]*)\"").matcher(json);
+                java.util.regex.Matcher m1 = java.util.regex.Pattern.compile("\"country_code\"\\s*:\\s*\"([^\"]*)\"").matcher(json);
+                java.util.regex.Matcher m2 = java.util.regex.Pattern.compile("\"isp\"\\s*:\\s*\"([^\"]*)\"").matcher(json);
                 if (m1.find() && m2.find()) {
                     return (m1.group(1) + "-" + m2.group(1)).replace(' ', '_');
                 }
@@ -665,7 +665,7 @@ public class PaperPlugin extends JavaPlugin {
         if (hy2)
             getLogger().info("Hysteria2:\nhysteria2://" + uuid + "@" + host + ":" + hy2Port + "?sni=" + sni + "&insecure=1#Hysteria2");
         if (!argoUrl.isEmpty() && !argoUrl.contains("固定隧道")) {
-            String node = buildVmessArgoLink(uuid, argoUrl, argoCfip);
+            String node = buildVmessArgoLink(uuid, argoUrl, argoCfip, "VMess-Argo");
             getLogger().info("\nVMess Argo:\n" + node);
         }
     }

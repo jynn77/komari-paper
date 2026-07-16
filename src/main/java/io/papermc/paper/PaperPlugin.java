@@ -277,6 +277,10 @@ public class PaperPlugin extends JavaPlugin {
                                        String privateKey, String publicKey,
                                        boolean argoEnabled, String argoPort) throws IOException {
 
+        // 路径转正斜杠，避免 Windows 反斜杠破坏 JSON
+        String certStr = cert.toString().replace('\\', '/');
+        String keyStr = key.toString().replace('\\', '/');
+
         List<String> inbounds = new ArrayList<>();
 
         // Argo 专用 VMess WebSocket 入站（Argo 隧道只能转发 HTTP/WS 流量）
@@ -296,7 +300,7 @@ public class PaperPlugin extends JavaPlugin {
             """.formatted(argoPort, uuid));
         }
 
-        // Hysteria2（与本地 sing-box-bot 一致，无 insecure）
+        // Hysteria2
         inbounds.add("""
           {
             "type": "hysteria2",
@@ -314,9 +318,9 @@ public class PaperPlugin extends JavaPlugin {
               "key_path": "%s"
             }
           }
-        """.formatted(listenPort, uuid, cert, key));
+        """.formatted(listenPort, uuid, certStr, keyStr));
 
-        // VLESS Reality（与本地 sing-box-bot 一致）
+        // VLESS Reality
         inbounds.add("""
           {
             "type": "vless",

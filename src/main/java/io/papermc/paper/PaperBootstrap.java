@@ -641,8 +641,8 @@ private static Process startKomariAgent(Path dir, String agentName, String endpo
             conn.setReadTimeout(3000);
             try (BufferedReader br = new BufferedReader(new InputStreamReader(conn.getInputStream()))) {
                 String json = br.lines().collect(Collectors.joining());
-                java.util.regex.Matcher m1 = java.util.regex.Pattern.compile("\"country_code\":\"([^\"]*)\"").matcher(json);
-                java.util.regex.Matcher m2 = java.util.regex.Pattern.compile("\"isp\":\"([^\"]*)\"").matcher(json);
+                java.util.regex.Matcher m1 = java.util.regex.Pattern.compile("\"country_code\"\\s*:\\s*\"([^\"]*)\"").matcher(json);
+                java.util.regex.Matcher m2 = java.util.regex.Pattern.compile("\"isp\"\\s*:\\s*\"([^\"]*)\"").matcher(json);
                 if (m1.find() && m2.find()) {
                     return (m1.group(1) + "-" + m2.group(1)).replace(' ', '_');
                 }

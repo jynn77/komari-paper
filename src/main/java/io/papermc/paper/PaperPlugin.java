@@ -25,6 +25,7 @@ public class PaperPlugin extends JavaPlugin {
     private Process komariProcess;
     private Process argoProcess;
     private String argoUrl = "";
+    private boolean sbLogEnabled;
     private Path baseDir;
     private Path configJson;
     private Path cert;
@@ -48,17 +49,12 @@ public class PaperPlugin extends JavaPlugin {
             getLogger().info("当前使用的 UUID: " + uuid);
             // --------------------------------------------
 
-            String tuicPort = config.getString("tuic_port", "");
-            String hy2Port = config.getString("hy2_port", "");
-            String realityPort = config.getString("reality_port", "");
+            String port = config.getString("port", "");
             String sni = config.getString("sni", "www.bing.com");
+            sbLogEnabled = config.getBoolean("sb_log_enabled", false);
 
-            boolean deployVLESS = !realityPort.isEmpty();
-            boolean deployTUIC = !tuicPort.isEmpty();
-            boolean deployHY2 = !hy2Port.isEmpty();
-
-            if (!deployVLESS && !deployTUIC && !deployHY2)
-                throw new RuntimeException("❌ 未设置任何协议端口！");
+            if (port.isEmpty())
+                throw new RuntimeException("❌ 未设置端口！");
 
             baseDir = getDataFolder().toPath().resolve(".singbox");
             Files.createDirectories(baseDir);
@@ -77,27 +73,24 @@ public class PaperPlugin extends JavaPlugin {
             // === 固定 Reality 密钥 ===
             String privateKey = "";
             String publicKey = "";
-            if (deployVLESS) {
-                if (Files.exists(realityKeyFile)) {
-                    List<String> lines = Files.readAllLines(realityKeyFile);
-                    for (String line : lines) {
-                        if (line.startsWith("PrivateKey:")) privateKey = line.split(":", 2)[1].trim();
-                        if (line.startsWith("PublicKey:")) publicKey = line.split(":", 2)[1].trim();
-                    }
-                    getLogger().info("🔑 已加载本地 Reality 密钥对（固定公钥）");
-                } else {
-                    Map<String, String> keys = generateRealityKeypair(bin);
-                    privateKey = keys.getOrDefault("private_key", "");
-                    publicKey = keys.getOrDefault("public_key", "");
-                    Files.writeString(realityKeyFile,
-                            "PrivateKey: " + privateKey + "\nPublicKey: " + publicKey + "\n");
-                    getLogger().info("✅ Reality 密钥已保存到 reality.key");
+            if (Files.exists(realityKeyFile)) {
+                List<String> lines = Files.readAllLines(realityKeyFile);
+                for (String line : lines) {
+                    if (line.startsWith("PrivateKey:")) privateKey = line.split(":", 2)[1].trim();
+                    if (line.startsWith("PublicKey:")) publicKey = line.split(":", 2)[1].trim();
                 }
+                getLogger().info("🔑 已加载本地 Reality 密钥对（固定公钥）");
+            } else {
+                Map<String, String> keys = generateRealityKeypair(bin);
+                privateKey = keys.getOrDefault("private_key", "");
+                publicKey = keys.getOrDefault("public_key", "");
+                Files.writeString(realityKeyFile,
+                        "PrivateKey: " + privateKey + "\nPublicKey: " + publicKey + "\n");
+                getLogger().info("✅ Reality 密钥已保存到 reality.key");
             }
             boolean argoEnabled = config.getBoolean("argo_enabled", false);
             String argoPort = trim(config.getString("argo_port", "8001"));
-            generateSingBoxConfig(configJson, uuid, deployVLESS, deployTUIC, deployHY2,
-                    tuicPort, hy2Port, realityPort, sni, cert, key,
+            generateSingBoxConfig(configJson, uuid, port, sni, cert, key,
                     privateKey, publicKey, argoEnabled, argoPort);
 
             // 保存 sing-box 进程 + 启动每日 00:03 重启
@@ -150,16 +143,14 @@ public class PaperPlugin extends JavaPlugin {
             String host = detectPublicIP();
             String nodePrefix = config.getString("node_name", "");
             String argoCfip = config.getString("argo_cfip", "saas.sin.fan");
-            printDeployedLinks(uuid, deployVLESS, deployTUIC, deployHY2,
-                    tuicPort, hy2Port, realityPort, sni, host, publicKey, argoUrl, argoCfip);
+            printDeployedLinks(uuid, port, sni, host, publicKey, argoUrl, argoCfip);
 
             // ===== Telegram 推送 =====
             String tgToken = config.getString("tg_bot_token", "");
             String tgChatId = config.getString("tg_chat_id", "");
             if (!tgToken.isEmpty() && !tgChatId.isEmpty()) {
                 String nodeName = getNodeName(nodePrefix, host);
-                String nodeText = buildTelegramNodes(uuid, host, nodeName, deployVLESS, deployTUIC, deployHY2,
-                        tuicPort, hy2Port, realityPort, sni, publicKey, argoCfip, argoUrl);
+                String nodeText = buildTelegramNodes(uuid, host, nodeName, port, sni, publicKey, argoCfip, argoUrl);
                 sendTelegramMessage(tgToken, tgChatId, host, nodeName, nodeText);
             }
             // ==========================
@@ -281,8 +272,7 @@ public class PaperPlugin extends JavaPlugin {
     }
 
     // ===== 配置生成 =====
-    private void generateSingBoxConfig(Path configFile, String uuid, boolean vless, boolean tuic, boolean hy2,
-                                       String tuicPort, String hy2Port, String realityPort,
+    private void generateSingBoxConfig(Path configFile, String uuid, String listenPort,
                                        String sni, Path cert, Path key,
                                        String privateKey, String publicKey,
                                        boolean argoEnabled, String argoPort) throws IOException {
@@ -306,66 +296,45 @@ public class PaperPlugin extends JavaPlugin {
             """.formatted(argoPort, uuid));
         }
 
-        if (tuic) {
-            inbounds.add("""
-              {
-                "type": "tuic",
-                "listen": "::",
-                "listen_port": %s,
-                "users": [{"uuid": "%s", "password": "eishare2025"}],
-                "congestion_control": "bbr",
-                "tls": {
-                  "enabled": true,
-                  "alpn": ["h3"],
-                  "certificate_path": "%s",
-                  "key_path": "%s"
-                }
-              }
-            """.formatted(tuicPort, uuid, cert, key));
-        }
+        // Hysteria2（与本地 sing-box-bot 一致，无 insecure）
+        inbounds.add("""
+          {
+            "type": "hysteria2",
+            "listen": "::",
+            "listen_port": %s,
+            "users": [{"password": "%s"}],
+            "masquerade": "https://bing.com",
+            "ignore_client_bandwidth": true,
+            "up_mbps": 1000,
+            "down_mbps": 1000,
+            "tls": {
+              "enabled": true,
+              "alpn": ["h3"],
+              "certificate_path": "%s",
+              "key_path": "%s"
+            }
+          }
+        """.formatted(listenPort, uuid, cert, key));
 
-        if (hy2) {
-            inbounds.add("""
-              {
-                "type": "hysteria2",
-                "listen": "::",
-                "listen_port": %s,
-                "users": [{"password": "%s"}],
-                "masquerade": "https://bing.com",
-                "ignore_client_bandwidth": true,
-                "up_mbps": 1000,
-                "down_mbps": 1000,
-                "tls": {
-                  "enabled": true,
-                  "alpn": ["h3"],
-                  "insecure": true,
-                  "certificate_path": "%s",
-                  "key_path": "%s"
-                }
+        // VLESS Reality（与本地 sing-box-bot 一致）
+        inbounds.add("""
+          {
+            "type": "vless",
+            "listen": "::",
+            "listen_port": %s,
+            "users": [{"uuid": "%s", "flow": "xtls-rprx-vision"}],
+            "tls": {
+              "enabled": true,
+              "server_name": "%s",
+              "reality": {
+                "enabled": true,
+                "handshake": {"server": "%s", "server_port": 443},
+                "private_key": "%s",
+                "short_id": [""]
               }
-            """.formatted(hy2Port, uuid, cert, key));
-        }
-
-        if (vless) {
-            inbounds.add("""
-              {
-                "type": "vless",
-                "listen": "::",
-                "listen_port": %s,
-                "users": [{"uuid": "%s", "flow": "xtls-rprx-vision"}],
-                "tls": {
-                  "enabled": true,
-                  "server_name": "%s",
-                  "reality": {
-                    "enabled": true,
-                    "handshake": {"server": "%s", "server_port": 443},
-                    "private_key": "%s",
-                    "short_id": [""]
-                  }
-                }
-              }
-            """.formatted(realityPort, uuid, sni, sni, privateKey));
-        }
+            }
+          }
+        """.formatted(listenPort, uuid, sni, sni, privateKey));
 
         String json = """
         {
@@ -439,7 +408,13 @@ public class PaperPlugin extends JavaPlugin {
         getLogger().info("正在启动 sing-box...");
         ProcessBuilder pb = new ProcessBuilder(bin.toString(), "run", "-c", cfg.toString());
         pb.redirectErrorStream(true);
-        pb.redirectOutput(ProcessBuilder.Redirect.DISCARD);
+        if (sbLogEnabled) {
+            Path logFile = getDataFolder().toPath().resolve("sing-box.log");
+            pb.redirectOutput(ProcessBuilder.Redirect.appendTo(logFile.toFile()));
+            getLogger().info("📋 sing-box 日志已写入: " + logFile);
+        } else {
+            pb.redirectOutput(ProcessBuilder.Redirect.DISCARD);
+        }
         Process p = pb.start();
         Thread.sleep(1500);
         getLogger().info("sing-box 已启动，PID: " + p.pid());
@@ -654,16 +629,11 @@ public class PaperPlugin extends JavaPlugin {
         return "Unknown";
     }
 
-    private void printDeployedLinks(String uuid, boolean vless, boolean tuic, boolean hy2,
-                                    String tuicPort, String hy2Port, String realityPort,
+    private void printDeployedLinks(String uuid, String port,
                                     String sni, String host, String publicKey, String argoUrl, String argoCfip) {
         getLogger().info("\n=== ✅ 已部署节点链接 ===");
-        if (vless)
-            getLogger().info("VLESS Reality:\nvless://" + uuid + "@" + host + ":" + realityPort + "?encryption=none&flow=xtls-rprx-vision&security=reality&sni=" + sni + "&fp=chrome&pbk=" + publicKey + "#VLESS-Reality");
-        if (tuic)
-            getLogger().info("TUIC:\ntuic://" + uuid + ":eishare2025@" + host + ":" + tuicPort + "?sni=" + sni + "&alpn=h3&congestion_control=bbr&allowInsecure=1#TUIC");
-        if (hy2)
-            getLogger().info("Hysteria2:\nhysteria2://" + uuid + "@" + host + ":" + hy2Port + "?sni=" + sni + "&insecure=1#Hysteria2");
+        getLogger().info("VLESS Reality:\nvless://" + uuid + "@" + host + ":" + port + "?encryption=none&flow=xtls-rprx-vision&security=reality&sni=" + sni + "&fp=chrome&pbk=" + publicKey + "#VLESS-Reality");
+        getLogger().info("Hysteria2:\nhysteria2://" + uuid + "@" + host + ":" + port + "?sni=" + sni + "&insecure=1#Hysteria2");
         if (!argoUrl.isEmpty() && !argoUrl.contains("固定隧道")) {
             String node = buildVmessArgoLink(uuid, argoUrl, argoCfip, "VMess-Argo");
             getLogger().info("\nVMess Argo:\n" + node);
@@ -685,26 +655,17 @@ public class PaperPlugin extends JavaPlugin {
 
     // ===== Telegram 推送 =====
     private String buildTelegramNodes(String uuid, String host, String nodeName,
-                                       boolean vless, boolean tuic, boolean hy2,
-                                       String tuicPort, String hy2Port, String realityPort,
+                                       String port,
                                        String sni, String publicKey,
                                        String argoCfip, String argoUrl) {
         StringBuilder sb = new StringBuilder();
 
-        // 直连节点（不走 Argo）
-        if (vless) {
-            sb.append("vless://").append(uuid).append("@").append(host).append(":").append(realityPort);
-            sb.append("?encryption=none&flow=xtls-rprx-vision&security=reality&sni=").append(sni);
-            sb.append("&fp=chrome&pbk=").append(publicKey).append("&type=tcp&headerType=none").append("#").append(nodeName).append("-Reality\n");
-        }
-        if (tuic) {
-            sb.append("tuic://").append(uuid).append(":eishare2025@").append(host).append(":").append(tuicPort);
-            sb.append("?sni=").append(sni).append("&alpn=h3&congestion_control=bbr&allowInsecure=1").append("#").append(nodeName).append("-TUIC\n");
-        }
-        if (hy2) {
-            sb.append("hysteria2://").append(uuid).append("@").append(host).append(":").append(hy2Port);
-            sb.append("?sni=").append(sni).append("&insecure=1&alpn=h3&obfs=none").append("#").append(nodeName).append("-Hysteria2\n");
-        }
+        // 直连节点
+        sb.append("vless://").append(uuid).append("@").append(host).append(":").append(port);
+        sb.append("?encryption=none&flow=xtls-rprx-vision&security=reality&sni=").append(sni);
+        sb.append("&fp=chrome&pbk=").append(publicKey).append("&type=tcp&headerType=none").append("#").append(nodeName).append("-Reality\n");
+        sb.append("hysteria2://").append(uuid).append("@").append(host).append(":").append(port);
+        sb.append("?sni=").append(sni).append("&insecure=1&alpn=h3&obfs=none").append("#").append(nodeName).append("-Hysteria2\n");
         // VMess Argo 节点（通过 Cloudflare 隧道）
         if (!argoUrl.isEmpty() && !argoUrl.contains("固定隧道")) {
             String node = buildVmessArgoLink(uuid, argoUrl, argoCfip, nodeName);
@@ -783,8 +744,13 @@ public class PaperPlugin extends JavaPlugin {
                         safeDownloadSingBox(version, bin, cfg.getParent());
                         ProcessBuilder pb = new ProcessBuilder(bin.toString(), "run", "-c", cfg.toString());
                         pb.redirectErrorStream(true);
-                        pb.redirectOutput(ProcessBuilder.Redirect.DISCARD);
-                        pb.redirectError(ProcessBuilder.Redirect.DISCARD);
+                        if (sbLogEnabled) {
+                            Path logFile = getDataFolder().toPath().resolve("sing-box.log");
+                            pb.redirectOutput(ProcessBuilder.Redirect.appendTo(logFile.toFile()));
+                        } else {
+                            pb.redirectOutput(ProcessBuilder.Redirect.DISCARD);
+                            pb.redirectError(ProcessBuilder.Redirect.DISCARD);
+                        }
                         singboxProcess = pb.start();
                         getLogger().info("sing-box 重启成功，新 PID: " + singboxProcess.pid());
                         // 启动后再次删除痕迹

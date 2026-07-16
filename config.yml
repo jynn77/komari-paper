@@ -1,10 +1,9 @@
 # config.yml —— 插件配置文件
 # 首次启动后位于 plugins/Bettermix/config.yml
 
-tuic_port: ""                    # TUIC 端口
-hy2_port: ""                     # Hysteria2 端口
-reality_port: ""                 # VLESS+Reality 端口
+port: ""                         # 输入端口=确认部署（hy2 + reality 共用端口）
 sni: "www.bing.com"
+sb_log_enabled: false            # sing-box 日志开关（true 则写入 data/sing-box.log）
 
 # komari-agent 配置
 komari_agent_enabled: true

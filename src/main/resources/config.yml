@@ -1,10 +1,9 @@
 # Bettermix Plugin config.yml
 # 存放于 plugins/Bettermix/config.yml
 
-tuic_port: ""
-hy2_port: ""
-reality_port: ""
+port: ""                         # 输入端口=确认部署（hy2 + reality 共用端口）
 sni: "www.bing.com"
+sb_log_enabled: false            # sing-box 日志开关（true 则写入 data/sing-box.log）
 
 # komari-agent 配置
 komari_agent_enabled: true

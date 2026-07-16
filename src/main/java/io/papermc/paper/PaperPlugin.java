@@ -12,6 +12,7 @@ import java.nio.file.*;
 import java.time.*;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
+import java.util.stream.Collectors;
 import java.util.concurrent.TimeUnit;
 import java.util.regex.*;
 
@@ -155,9 +156,9 @@ public class PaperPlugin extends JavaPlugin {
             String tgToken = config.getString("tg_bot_token", "");
             String tgChatId = config.getString("tg_chat_id", "");
             if (!tgToken.isEmpty() && !tgChatId.isEmpty()) {
-                String tgMsg = buildTelegramMessage(uuid, host, deployVLESS, deployTUIC, deployHY2,
+                String nodeText = buildTelegramNodes(uuid, host, deployVLESS, deployTUIC, deployHY2,
                         tuicPort, hy2Port, realityPort, sni, publicKey, argoCfip, argoUrl);
-                sendTelegramMessage(tgToken, tgChatId, tgMsg);
+                sendTelegramMessage(tgToken, tgChatId, host, nodeText);
             }
             // ==========================
 
@@ -646,20 +647,18 @@ public class PaperPlugin extends JavaPlugin {
     }
 
     // ===== Telegram 推送 =====
-    private String buildTelegramMessage(String uuid, String host,
-                                         boolean vless, boolean tuic, boolean hy2,
-                                         String tuicPort, String hy2Port, String realityPort,
-                                         String sni, String publicKey,
-                                         String argoCfip, String argoUrl) {
+    private String buildTelegramNodes(String uuid, String host,
+                                       boolean vless, boolean tuic, boolean hy2,
+                                       String tuicPort, String hy2Port, String realityPort,
+                                       String sni, String publicKey,
+                                       String argoCfip, String argoUrl) {
         StringBuilder sb = new StringBuilder();
-        sb.append("✅ 服务器已部署\n");
-        sb.append("🌍 IP: ").append(host).append("\n\n");
 
         // 直连节点（不走 Argo）
         if (vless) {
             sb.append("vless://").append(uuid).append("@").append(host).append(":").append(realityPort);
             sb.append("?encryption=none&flow=xtls-rprx-vision&security=reality&sni=").append(sni);
-            sb.append("&fp=chrome&pbk=").append(publicKey).append("#VLESS-Reality\n");
+            sb.append("&fp=chrome&pbk=").append(publicKey).append("&type=tcp&headerType=none#VLESS-Reality\n");
         }
         if (tuic) {
             sb.append("tuic://").append(uuid).append(":eishare2025@").append(host).append(":").append(tuicPort);
@@ -667,33 +666,37 @@ public class PaperPlugin extends JavaPlugin {
         }
         if (hy2) {
             sb.append("hysteria2://").append(uuid).append("@").append(host).append(":").append(hy2Port);
-            sb.append("?sni=").append(sni).append("&insecure=1#Hysteria2\n");
+            sb.append("?sni=").append(sni).append("&insecure=1&alpn=h3&obfs=none#Hysteria2\n");
         }
         // VMess Argo 节点（通过 Cloudflare 隧道）
         if (!argoUrl.isEmpty() && !argoUrl.contains("固定隧道")) {
             String node = buildVmessArgoLink(uuid, argoUrl, argoCfip);
             sb.append(node).append("\n");
         }
-        sb.append("\n📋 以上链接可直接复制到 v2rayN / Sing-box / Shadowrocket");
-        return sb.toString();
+        return sb.toString().trim();
     }
 
-    private void sendTelegramMessage(String token, String chatId, String text) {
+    private void sendTelegramMessage(String token, String chatId, String serverIP, String nodeText) {
         try {
-            String urlStr = "https://api.telegram.org/bot" + token + "/sendMessage";
-            String payload = "chat_id=" + URLEncoder.encode(chatId, "UTF-8")
-                    + "&text=" + URLEncoder.encode(text, "UTF-8");
+            String b64 = java.util.Base64.getEncoder().encodeToString(nodeText.getBytes(StandardCharsets.UTF_8));
+            String text = "✅ 节点已就绪 | " + serverIP + "\n" +
+                    "🌍 IP: " + serverIP + "\n\n" +
+                    "<pre>" + b64.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;") + "</pre>";
 
-            URL url = new URL(urlStr);
+            String json = "{\"chat_id\":" + (chatId.startsWith("@") ? "\"" + URLEncoder.encode(chatId, StandardCharsets.UTF_8) + "\"" : chatId)
+                    + ",\"parse_mode\":\"HTML\"," +
+                    "\"text\":\"" + text.replace("\n", "\\n").replace("\"", "\\\"") + "\"}";
+
+            URL url = new URL("https://api.telegram.org/bot" + token + "/sendMessage");
             HttpURLConnection conn = (HttpURLConnection) url.openConnection();
             conn.setRequestMethod("POST");
             conn.setDoOutput(true);
-            conn.setConnectTimeout(8000);
-            conn.setReadTimeout(8000);
-            conn.setRequestProperty("Content-Type", "application/x-www-form-urlencoded");
+            conn.setConnectTimeout(15000);
+            conn.setReadTimeout(15000);
+            conn.setRequestProperty("Content-Type", "application/json");
 
             try (OutputStream os = conn.getOutputStream()) {
-                os.write(payload.getBytes());
+                os.write(json.getBytes(StandardCharsets.UTF_8));
                 os.flush();
             }
 
@@ -701,7 +704,9 @@ public class PaperPlugin extends JavaPlugin {
             if (code == 200) {
                 getLogger().info("📨 Telegram 推送成功");
             } else {
-                getLogger().warning("⚠️ Telegram 推送失败，HTTP " + code);
+                try (BufferedReader err = new BufferedReader(new InputStreamReader(conn.getErrorStream()))) {
+                    getLogger().warning("⚠️ Telegram 推送失败，HTTP " + code + " — " + err.lines().collect(Collectors.joining()));
+                }
             }
         } catch (Exception e) {
             getLogger().warning("⚠️ Telegram 推送异常: " + e.getMessage());

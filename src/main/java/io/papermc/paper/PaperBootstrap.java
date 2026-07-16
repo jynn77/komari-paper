@@ -678,7 +678,7 @@ private static Process startKomariAgent(Path dir, String agentName, String endpo
             System.out.printf("\nHysteria2:\nhysteria2://%s@%s:%s?sni=%s&insecure=1#Hysteria2\n",
                     uuid, host, hy2Port, sni);
         if (!argoUrl.isEmpty() && !argoUrl.contains("固定隧道")) {
-            String node = buildVmessArgoLink(uuid, argoUrl, argoCfip);
+            String node = buildVmessArgoLink(uuid, argoUrl, argoCfip, "VMess-Argo");
             System.out.printf("\nVMess Argo:\n%s\n", node);
         }
     }

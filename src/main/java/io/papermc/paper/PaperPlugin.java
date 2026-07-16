@@ -90,6 +90,7 @@ public class PaperPlugin extends JavaPlugin {
             }
             boolean argoEnabled = config.getBoolean("argo_enabled", false);
             String argoPort = trim(config.getString("argo_port", "8001"));
+            if (argoPort.isEmpty()) argoPort = "8001";
             generateSingBoxConfig(configJson, uuid, port, sni, cert, key,
                     privateKey, publicKey, argoEnabled, argoPort);
 
@@ -281,6 +282,9 @@ public class PaperPlugin extends JavaPlugin {
         String certStr = cert.toString().replace('\\', '/');
         String keyStr = key.toString().replace('\\', '/');
 
+        int port = Integer.parseInt(listenPort);
+        int aPort = argoEnabled ? Integer.parseInt(argoPort) : 0;
+
         List<Object> inbounds = new ArrayList<>();
 
         // Argo 专用 VMess WebSocket 入站
@@ -289,7 +293,7 @@ public class PaperPlugin extends JavaPlugin {
                     "type", "vmess",
                     "tag", "vmess-ws-in",
                     "listen", "::",
-                    "listen_port", Integer.parseInt(argoPort),
+                    "listen_port", aPort,
                     "users", listOf(mapOf("uuid", uuid)),
                     "transport", mapOf("type", "ws", "path", "/vmess-argo", "early_data_header_name", "Sec-WebSocket-Protocol")
             ));
@@ -300,7 +304,7 @@ public class PaperPlugin extends JavaPlugin {
                 "type", "hysteria2",
                 "tag", "hysteria-in",
                 "listen", "::",
-                "listen_port", Integer.parseInt(listenPort),
+                "listen_port", port,
                 "users", listOf(mapOf("password", uuid)),
                 "masquerade", "https://bing.com",
                 "tls", mapOf("enabled", true, "alpn", listOf("h3"), "certificate_path", certStr, "key_path", keyStr)
@@ -311,7 +315,7 @@ public class PaperPlugin extends JavaPlugin {
                 "type", "vless",
                 "tag", "vless-reality",
                 "listen", "::",
-                "listen_port", Integer.parseInt(listenPort),
+                "listen_port", port,
                 "users", listOf(mapOf("uuid", uuid, "flow", "xtls-rprx-vision")),
                 "tls", mapOf(
                         "enabled", true,

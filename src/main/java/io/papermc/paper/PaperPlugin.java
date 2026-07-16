@@ -148,7 +148,7 @@ public class PaperPlugin extends JavaPlugin {
             // ==========================
 
             String host = detectPublicIP();
-            String argoCfip = config.getString("argo_cfip", "cdns.doon.eu.org");
+            String argoCfip = config.getString("argo_cfip", "saas.sin.fan");
             printDeployedLinks(uuid, deployVLESS, deployTUIC, deployHY2,
                     tuicPort, hy2Port, realityPort, sni, host, publicKey, argoUrl, argoCfip);
 

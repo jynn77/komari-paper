@@ -1,6 +1,5 @@
 # config.yml —— 所有配置集中于此
 uuid: ""                       #输入uuid
-tuic_port: ""                  #输入端口=确认部署
-hy2_port: ""                   #输入端口=确认部署
-reality_port: ""               #输入端口=确认部署
+port: ""                       # 输入端口=确认部署（hy2 + reality 共用端口）
 sni: "www.bing.com"
+sb_log_enabled: false          # sing-box 日志开关（true 则写入 data/sing-box.log）

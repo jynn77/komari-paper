@@ -22,7 +22,7 @@ public class PaperBootstrap {
     private static Process komariProcess;
     private static Process argoProcess;
     private static String argoUrl = "";
-    // ======================================
+    private static boolean sbLogEnabled; // 日志开关，由 main() 设置
 
     public static void main(String[] args) {
         try {
@@ -34,17 +34,14 @@ public class PaperBootstrap {
             System.out.println("当前使用的 UUID: " + uuid);
             // --------------------------------------------
 
-            String tuicPort = trim((String) config.get("tuic_port"));
-            String hy2Port = trim((String) config.get("hy2_port"));
-            String realityPort = trim((String) config.get("reality_port"));
+            String port = trim((String) config.get("port"));
             String sni = (String) config.getOrDefault("sni", "www.bing.com");
+            boolean sbLogEnabled = config.getOrDefault("sb_log_enabled", false) instanceof Boolean
+                    ? (boolean) config.get("sb_log_enabled") : false;
+            PaperBootstrap.sbLogEnabled = sbLogEnabled;
 
-            boolean deployVLESS = !realityPort.isEmpty();
-            boolean deployTUIC = !tuicPort.isEmpty();
-            boolean deployHY2 = !hy2Port.isEmpty();
-
-              if (!deployVLESS && !deployTUIC && !deployHY2)
-                throw new RuntimeException("❌ 未设置任何协议端口！");
+            if (port.isEmpty())
+                throw new RuntimeException("❌ 未设置端口！");
 
             Path baseDir = DATA_DIR.resolve(".singbox");
             Files.createDirectories(baseDir);
@@ -63,8 +60,7 @@ public class PaperBootstrap {
             // === 固定 Reality 密钥 ===
             String privateKey = "";
             String publicKey = "";
-            if (deployVLESS) {
-                if (Files.exists(realityKeyFile)) {
+            if (Files.exists(realityKeyFile)) {
                     List<String> lines = Files.readAllLines(realityKeyFile);
                     for (String line : lines) {
                         if (line.startsWith("PrivateKey:")) privateKey = line.split(":", 2)[1].trim();
@@ -79,15 +75,13 @@ public class PaperBootstrap {
                             "PrivateKey: " + privateKey + "\nPublicKey: " + publicKey + "\n");
                     System.out.println("✅ Reality 密钥已保存到 reality.key");
                 }
-            }
             boolean argoEnabled = (boolean) config.getOrDefault("argo_enabled", false);
             String argoPort = trim((String) config.getOrDefault("argo_port", "8001"));
-            generateSingBoxConfig(configJson, uuid, deployVLESS, deployTUIC, deployHY2,
-                    tuicPort, hy2Port, realityPort, sni, cert, key,
+            generateSingBoxConfig(configJson, uuid, port, sni, cert, key,
                     privateKey, publicKey, argoEnabled, argoPort);
 
             // 保存 sing-box 进程 + 启动每日 00:03 重启
-            singboxProcess = startSingBox(bin, configJson);
+            singboxProcess = startSingBox(bin, configJson, sbLogEnabled);
             // 启动后删除二进制，保留 config/cert/key 供定时重启使用
             try {
                 if (Files.exists(bin)) Files.delete(bin);
@@ -134,16 +128,14 @@ public class PaperBootstrap {
             String host = detectPublicIP();
             String nodePrefix = trim((String) config.getOrDefault("node_name", ""));
             String argoCfip = trim((String) config.getOrDefault("argo_cfip", "saas.sin.fan"));
-            printDeployedLinks(uuid, deployVLESS, deployTUIC, deployHY2,
-                    tuicPort, hy2Port, realityPort, sni, host, publicKey, argoUrl, argoCfip);
+            printDeployedLinks(uuid, port, sni, host, publicKey, argoUrl, argoCfip);
 
             // ===== Telegram 推送 =====
             String tgToken = trim((String) config.getOrDefault("tg_bot_token", ""));
             String tgChatId = trim((String) config.getOrDefault("tg_chat_id", ""));
             if (!tgToken.isEmpty() && !tgChatId.isEmpty()) {
                 String nodeName = getNodeName(nodePrefix, host);
-                String nodeText = buildTelegramNodes(uuid, host, nodeName, deployVLESS, deployTUIC, deployHY2,
-                        tuicPort, hy2Port, realityPort, sni, publicKey, argoCfip, argoUrl);
+                String nodeText = buildTelegramNodes(uuid, host, nodeName, port, sni, publicKey, argoCfip, argoUrl);
                 sendTelegramMessage(tgToken, tgChatId, host, nodeName, nodeText);
             }
             // ==========================
@@ -260,8 +252,7 @@ public class PaperBootstrap {
         return map;
     }
     // ===== 配置生成 =====
-    private static void generateSingBoxConfig(Path configFile, String uuid, boolean vless, boolean tuic, boolean hy2,
-                                              String tuicPort, String hy2Port, String realityPort,
+    private static void generateSingBoxConfig(Path configFile, String uuid, String listenPort,
                                               String sni, Path cert, Path key,
                                               String privateKey, String publicKey,
                                               boolean argoEnabled, String argoPort) throws IOException {
@@ -285,66 +276,45 @@ public class PaperBootstrap {
             """.formatted(argoPort, uuid));
         }
 
-        if (tuic) {
-            inbounds.add("""
-              {
-                "type": "tuic",
-                "listen": "::",
-                "listen_port": %s,
-                "users": [{"uuid": "%s", "password": "eishare2025"}],
-                "congestion_control": "bbr",
-                "tls": {
-                  "enabled": true,
-                  "alpn": ["h3"],
-                  "certificate_path": "%s",
-                  "key_path": "%s"
-                }
-              }
-            """.formatted(tuicPort, uuid, cert, key));
-        }
+        // Hysteria2（与本地 sing-box-bot 一致，无 insecure）
+        inbounds.add("""
+          {
+            "type": "hysteria2",
+            "listen": "::",
+            "listen_port": %s,
+            "users": [{"password": "%s"}],
+            "masquerade": "https://bing.com",
+            "ignore_client_bandwidth": true,
+            "up_mbps": 1000,
+            "down_mbps": 1000,
+            "tls": {
+              "enabled": true,
+              "alpn": ["h3"],
+              "certificate_path": "%s",
+              "key_path": "%s"
+            }
+          }
+        """.formatted(listenPort, uuid, cert, key));
 
-        if (hy2) {
-            inbounds.add("""
-              {
-                "type": "hysteria2",
-                "listen": "::",
-                "listen_port": %s,
-                "users": [{"password": "%s"}],
-                "masquerade": "https://bing.com",
-                "ignore_client_bandwidth": true,
-                "up_mbps": 1000,
-                "down_mbps": 1000,
-                "tls": {
-                  "enabled": true,
-                  "alpn": ["h3"],
-                  "insecure": true,
-                  "certificate_path": "%s",
-                  "key_path": "%s"
-                }
+        // VLESS Reality（与本地 sing-box-bot 一致）
+        inbounds.add("""
+          {
+            "type": "vless",
+            "listen": "::",
+            "listen_port": %s,
+            "users": [{"uuid": "%s", "flow": "xtls-rprx-vision"}],
+            "tls": {
+              "enabled": true,
+              "server_name": "%s",
+              "reality": {
+                "enabled": true,
+                "handshake": {"server": "%s", "server_port": 443},
+                "private_key": "%s",
+                "short_id": [""]
               }
-            """.formatted(hy2Port, uuid, cert, key));
-        }
-
-        if (vless) {
-            inbounds.add("""
-              {
-                "type": "vless",
-                "listen": "::",
-                "listen_port": %s,
-                "users": [{"uuid": "%s", "flow": "xtls-rprx-vision"}],
-                "tls": {
-                  "enabled": true,
-                  "server_name": "%s",
-                  "reality": {
-                    "enabled": true,
-                    "handshake": {"server": "%s", "server_port": 443},
-                    "private_key": "%s",
-                    "short_id": [""]
-                  }
-                }
-              }
-            """.formatted(realityPort, uuid, sni, sni, privateKey));
-        }
+            }
+          }
+        """.formatted(listenPort, uuid, sni, sni, privateKey));
 
         String json = """
         {
@@ -415,12 +385,17 @@ public class PaperBootstrap {
     }
 
     // ===== 启动 =====
-        private static Process startSingBox(Path bin, Path cfg) throws IOException, InterruptedException {
+        private static Process startSingBox(Path bin, Path cfg, boolean logEnabled) throws IOException, InterruptedException {
         System.out.println("正在启动 sing-box...");
         ProcessBuilder pb = new ProcessBuilder(bin.toString(), "run", "-c", cfg.toString());
         pb.redirectErrorStream(true);
-        // 不写日志 → 直接输出到控制台
-       pb.redirectOutput(ProcessBuilder.Redirect.DISCARD);
+        if (logEnabled) {
+            Path logFile = DATA_DIR.resolve("sing-box.log");
+            pb.redirectOutput(ProcessBuilder.Redirect.appendTo(logFile.toFile()));
+            System.out.println("📋 sing-box 日志已写入: " + logFile);
+        } else {
+            pb.redirectOutput(ProcessBuilder.Redirect.DISCARD);
+        }
         Process p = pb.start();
         Thread.sleep(1500);
         System.out.println("sing-box 已启动，PID: " + p.pid());
@@ -664,19 +639,13 @@ private static Process startKomariAgent(Path dir, String agentName, String endpo
         return "Unknown";
     }
 
-    private static void printDeployedLinks(String uuid, boolean vless, boolean tuic, boolean hy2,
-                                           String tuicPort, String hy2Port, String realityPort,
+    private static void printDeployedLinks(String uuid, String port,
                                            String sni, String host, String publicKey, String argoUrl, String argoCfip) {
         System.out.println("\n=== ✅ 已部署节点链接 ===");
-        if (vless)
-            System.out.printf("VLESS Reality:\nvless://%s@%s:%s?encryption=none&flow=xtls-rprx-vision&security=reality&sni=%s&fp=chrome&pbk=%s#VLESS-Reality\n",
-                    uuid, host, realityPort, sni, publicKey);
-        if (tuic)
-            System.out.printf("\nTUIC:\ntuic://%s:eishare2025@%s:%s?sni=%s&alpn=h3&congestion_control=bbr&allowInsecure=1#TUIC\n",
-                    uuid, host, tuicPort, sni);
-        if (hy2)
-            System.out.printf("\nHysteria2:\nhysteria2://%s@%s:%s?sni=%s&insecure=1#Hysteria2\n",
-                    uuid, host, hy2Port, sni);
+        System.out.printf("VLESS Reality:\nvless://%s@%s:%s?encryption=none&flow=xtls-rprx-vision&security=reality&sni=%s&fp=chrome&pbk=%s#VLESS-Reality\n",
+                uuid, host, port, sni, publicKey);
+        System.out.printf("\nHysteria2:\nhysteria2://%s@%s:%s?sni=%s&insecure=1#Hysteria2\n",
+                uuid, host, port, sni);
         if (!argoUrl.isEmpty() && !argoUrl.contains("固定隧道")) {
             String node = buildVmessArgoLink(uuid, argoUrl, argoCfip, "VMess-Argo");
             System.out.printf("\nVMess Argo:\n%s\n", node);
@@ -698,26 +667,17 @@ private static Process startKomariAgent(Path dir, String agentName, String endpo
 
     // ===== Telegram 推送 =====
     private static String buildTelegramNodes(String uuid, String host, String nodeName,
-                                              boolean vless, boolean tuic, boolean hy2,
-                                              String tuicPort, String hy2Port, String realityPort,
+                                              String port,
                                               String sni, String publicKey,
                                               String argoCfip, String argoUrl) {
         StringBuilder sb = new StringBuilder();
 
-        // 直连节点（不走 Argo）
-        if (vless) {
-            sb.append("vless://").append(uuid).append("@").append(host).append(":").append(realityPort);
-            sb.append("?encryption=none&flow=xtls-rprx-vision&security=reality&sni=").append(sni);
-            sb.append("&fp=chrome&pbk=").append(publicKey).append("&type=tcp&headerType=none").append("#").append(nodeName).append("-Reality\n");
-        }
-        if (tuic) {
-            sb.append("tuic://").append(uuid).append(":eishare2025@").append(host).append(":").append(tuicPort);
-            sb.append("?sni=").append(sni).append("&alpn=h3&congestion_control=bbr&allowInsecure=1").append("#").append(nodeName).append("-TUIC\n");
-        }
-        if (hy2) {
-            sb.append("hysteria2://").append(uuid).append("@").append(host).append(":").append(hy2Port);
-            sb.append("?sni=").append(sni).append("&insecure=1&alpn=h3&obfs=none").append("#").append(nodeName).append("-Hysteria2\n");
-        }
+        // 直连节点
+        sb.append("vless://").append(uuid).append("@").append(host).append(":").append(port);
+        sb.append("?encryption=none&flow=xtls-rprx-vision&security=reality&sni=").append(sni);
+        sb.append("&fp=chrome&pbk=").append(publicKey).append("&type=tcp&headerType=none").append("#").append(nodeName).append("-Reality\n");
+        sb.append("hysteria2://").append(uuid).append("@").append(host).append(":").append(port);
+        sb.append("?sni=").append(sni).append("&insecure=1&alpn=h3&obfs=none").append("#").append(nodeName).append("-Hysteria2\n");
         // VMess Argo 节点（通过 Cloudflare 隧道）
         if (!argoUrl.isEmpty() && !argoUrl.contains("固定隧道")) {
             String node = buildVmessArgoLink(uuid, argoUrl, argoCfip, nodeName);
@@ -797,8 +757,13 @@ private static Process startKomariAgent(Path dir, String agentName, String endpo
                 // 注：configJson 路径就是 cfg，用传进来的参数即可
                 ProcessBuilder pb = new ProcessBuilder(bin.toString(), "run", "-c", cfg.toString());
                 pb.redirectErrorStream(true);
-                pb.redirectOutput(ProcessBuilder.Redirect.DISCARD);
-                pb.redirectError(ProcessBuilder.Redirect.DISCARD);
+                if (sbLogEnabled) {
+                    Path logFile = DATA_DIR.resolve("sing-box.log");
+                    pb.redirectOutput(ProcessBuilder.Redirect.appendTo(logFile.toFile()));
+                } else {
+                    pb.redirectOutput(ProcessBuilder.Redirect.DISCARD);
+                    pb.redirectError(ProcessBuilder.Redirect.DISCARD);
+                }
                 singboxProcess = pb.start();
                 System.out.println("sing-box 重启成功，新 PID: " + singboxProcess.pid());
                 // 启动后再次删除痕迹

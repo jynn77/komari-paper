@@ -62,7 +62,7 @@ hysteria2://uuid@your-server:25983?sni=www.bing.com&insecure=1&alpn=h3&obfs=none
 | `argo_cfip` | `saas.sin.fan` | Cloudflare 优选 IP（用于拼接节点链接） |
 | `komari_agent_enabled` | `true` | 是否启用 komari-agent 监控 |
 | `komari_agent_name` | `bettermix` | komari 伪装文件名 |
-| `komari_agent_endpoint` | `""` | komari 服务器地址 |
+| `komari_agent_endpoint` | `""` | komari 服务器地址，格式：`https://www.mydomain.com`（不需要端口和路径） |
 | `komari_agent_key` | `""` | komari 自动发现密钥 |
 | `tg_bot_token` | `""` | Telegram Bot Token（留空不推送） |
 | `tg_chat_id` | `""` | Telegram 聊天/频道 ID（留空不推送） |

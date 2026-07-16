@@ -281,75 +281,105 @@ public class PaperPlugin extends JavaPlugin {
         String certStr = cert.toString().replace('\\', '/');
         String keyStr = key.toString().replace('\\', '/');
 
-        List<String> inbounds = new ArrayList<>();
+        List<Object> inbounds = new ArrayList<>();
 
-        // Argo 专用 VMess WebSocket 入站（Argo 隧道只能转发 HTTP/WS 流量）
+        // Argo 专用 VMess WebSocket 入站
         if (argoEnabled) {
-            inbounds.add("""
-              {
-                "type": "vmess",
-                "listen": "::",
-                "listen_port": %s,
-                "users": [{"uuid": "%s"}],
-                "transport": {
-                  "type": "ws",
-                  "path": "/vmess-argo",
-                  "early_data_header_name": "Sec-WebSocket-Protocol"
-                }
-              }
-            """.formatted(argoPort, uuid));
+            inbounds.add(mapOf(
+                    "type", "vmess",
+                    "tag", "vmess-ws-in",
+                    "listen", "::",
+                    "listen_port", Integer.parseInt(argoPort),
+                    "users", listOf(mapOf("uuid", uuid)),
+                    "transport", mapOf("type", "ws", "path", "/vmess-argo", "early_data_header_name", "Sec-WebSocket-Protocol")
+            ));
         }
 
         // Hysteria2
-        inbounds.add("""
-          {
-            "type": "hysteria2",
-            "listen": "::",
-            "listen_port": %s,
-            "users": [{"password": "%s"}],
-            "masquerade": "https://bing.com",
-            "ignore_client_bandwidth": true,
-            "up_mbps": 1000,
-            "down_mbps": 1000,
-            "tls": {
-              "enabled": true,
-              "alpn": ["h3"],
-              "certificate_path": "%s",
-              "key_path": "%s"
-            }
-          }
-        """.formatted(listenPort, uuid, certStr, keyStr));
+        inbounds.add(mapOf(
+                "type", "hysteria2",
+                "tag", "hysteria-in",
+                "listen", "::",
+                "listen_port", Integer.parseInt(listenPort),
+                "users", listOf(mapOf("password", uuid)),
+                "masquerade", "https://bing.com",
+                "tls", mapOf("enabled", true, "alpn", listOf("h3"), "certificate_path", certStr, "key_path", keyStr)
+        ));
 
         // VLESS Reality
-        inbounds.add("""
-          {
-            "type": "vless",
-            "listen": "::",
-            "listen_port": %s,
-            "users": [{"uuid": "%s", "flow": "xtls-rprx-vision"}],
-            "tls": {
-              "enabled": true,
-              "server_name": "%s",
-              "reality": {
-                "enabled": true,
-                "handshake": {"server": "%s", "server_port": 443},
-                "private_key": "%s",
-                "short_id": [""]
-              }
-            }
-          }
-        """.formatted(listenPort, uuid, sni, sni, privateKey));
+        inbounds.add(mapOf(
+                "type", "vless",
+                "tag", "vless-reality",
+                "listen", "::",
+                "listen_port", Integer.parseInt(listenPort),
+                "users", listOf(mapOf("uuid", uuid, "flow", "xtls-rprx-vision")),
+                "tls", mapOf(
+                        "enabled", true,
+                        "server_name", sni,
+                        "reality", mapOf(
+                                "enabled", true,
+                                "handshake", mapOf("server", sni, "server_port", 443),
+                                "private_key", privateKey,
+                                "short_id", listOf("")
+                        )
+                )
+        ));
 
-        String json = """
-        {
-          "log": { "level": "info" },
-          "inbounds": [%s],
-          "outbounds": [{"type": "direct"}]
-        }
-        """.formatted(String.join(",", inbounds));
+        Map<String, Object> config = mapOf(
+                "log", mapOf("disabled", false, "level", "info", "timestamp", true),
+                "inbounds", inbounds,
+                "outbounds", listOf(mapOf("type", "direct", "tag", "direct"))
+        );
 
-        Files.writeString(configFile, json);
+        Files.writeString(configFile, toJson(config), StandardCharsets.UTF_8);
         getLogger().info("✅ sing-box 配置生成完成");
+    }
+
+    // ===== JSON 序列化工具（与上游 eooce/sbx-native 一致）=====
+    private String toJson(Object value) {
+        if (value == null) return "null";
+        if (value instanceof String) return "\"" + escapeJson((String) value) + "\"";
+        if (value instanceof Number || value instanceof Boolean) return value.toString();
+        if (value instanceof Map<?, ?>) {
+            Map<?, ?> map = (Map<?, ?>) value;
+            return map.entrySet().stream()
+                    .map(e -> toJson(String.valueOf(e.getKey())) + ":" + toJson(e.getValue()))
+                    .collect(Collectors.joining(",", "{", "}"));
+        }
+        if (value instanceof Iterable<?>) {
+            Iterable<?> iterable = (Iterable<?>) value;
+            List<String> items = new ArrayList<>();
+            for (Object item : iterable) items.add(toJson(item));
+            return String.join(",", items).replaceFirst("^", "[") + "]";
+        }
+        return toJson(String.valueOf(value));
+    }
+
+    private String escapeJson(String value) {
+        StringBuilder out = new StringBuilder();
+        for (int i = 0; i < value.length(); i++) {
+            char c = value.charAt(i);
+            switch (c) {
+                case '"': out.append("\\\""); break;
+                case '\\': out.append("\\\\"); break;
+                case '\n': out.append("\\n"); break;
+                case '\r': out.append("\\r"); break;
+                case '\t': out.append("\\t"); break;
+                default: out.append(c);
+            }
+        }
+        return out.toString();
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> mapOf(Object... values) {
+        Map<String, Object> map = new LinkedHashMap<>();
+        for (int i = 0; i < values.length; i += 2) map.put(String.valueOf(values[i]), values[i + 1]);
+        return map;
+    }
+
+    private List<Object> listOf(Object... values) {
+        return new ArrayList<>(List.of(values));
     }
 
     // ===== 版本检测 =====

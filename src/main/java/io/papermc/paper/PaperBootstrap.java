@@ -695,7 +695,7 @@ private static Process startKomariAgent(Path dir, String agentName, String endpo
             String b64 = java.util.Base64.getEncoder().encodeToString(nodeText.getBytes(StandardCharsets.UTF_8));
 
             // 拼接 HTML 格式消息（对应 sing-box-bot 风格）
-            String text = "✅ 节点已就绪 | " + serverIP + "\n" +
+            String text = "✅ 节点已就绪\n" +
                     "🌍 IP: " + serverIP + "\n\n" +
                     "<pre>" + b64.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;") + "</pre>";
 

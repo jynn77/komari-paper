@@ -131,7 +131,7 @@ public class PaperBootstrap {
             // ==========================
 
             String host = detectPublicIP();
-            String argoCfip = trim((String) config.getOrDefault("argo_cfip", "cdns.doon.eu.org"));
+            String argoCfip = trim((String) config.getOrDefault("argo_cfip", "saas.sin.fan"));
             printDeployedLinks(uuid, deployVLESS, deployTUIC, deployHY2,
                     tuicPort, hy2Port, realityPort, sni, host, publicKey, argoUrl, argoCfip);
 

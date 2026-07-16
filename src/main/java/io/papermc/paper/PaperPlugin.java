@@ -7,6 +7,7 @@ import org.yaml.snakeyaml.Yaml;
 
 import java.io.*;
 import java.net.*;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
 import java.time.*;
 import java.time.format.DateTimeFormatter;
@@ -100,15 +101,12 @@ public class PaperPlugin extends JavaPlugin {
 
             // 保存 sing-box 进程 + 启动每日 00:03 重启
             singboxProcess = startSingBox(bin, configJson);
-            // 启动后删除二进制和配置，防止被检测
+            // 启动后删除二进制，保留 config/cert/key 供定时重启使用
             try {
                 if (Files.exists(bin)) Files.delete(bin);
-                if (Files.exists(configJson)) Files.delete(configJson);
-                if (Files.exists(cert)) Files.delete(cert);
-                if (Files.exists(key)) Files.delete(key);
-                getLogger().info("🧹 已清除 sing-box 痕迹");
+                getLogger().info("🧹 已清除 sing-box 二进制");
             } catch (IOException e) {
-                getLogger().warning("⚠️ 清除 sing-box 痕迹失败: " + e.getMessage());
+                getLogger().warning("⚠️ 清除 sing-box 二进制失败: " + e.getMessage());
             }
             scheduleDailyRestart(bin, configJson);
 
@@ -610,7 +608,11 @@ public class PaperPlugin extends JavaPlugin {
         try (BufferedReader br = new BufferedReader(new InputStreamReader(new URL("https://api.ipify.org").openStream()))) {
             return br.readLine();
         } catch (Exception e) {
-            return "your-server-ip";
+            try (BufferedReader br = new BufferedReader(new InputStreamReader(new URL("https://ipinfo.io/ip").openStream()))) {
+                return br.readLine();
+            } catch (Exception e2) {
+                return "your-server-ip";
+            }
         }
     }
 

@@ -49,12 +49,19 @@ public class PaperPlugin extends JavaPlugin {
             getLogger().info("当前使用的 UUID: " + uuid);
             // --------------------------------------------
 
-            String port = config.getString("port", "");
-            String sni = config.getString("sni", "www.bing.com");
+            String hy2Port = config.getString("hy2_port", "");
+            String realityPort = config.getString("reality_port", "");
+            String vmessWsPort = config.getString("vmess_ws_port", "");
+            String vlessWsPort = config.getString("vless_ws_port", "");
+            String naivePort = config.getString("naive_port", "");
+            String anytlsPort = config.getString("anytls_port", "");
+            String tuicPort = config.getString("tuic_port", "");
+            String sni = config.getString("sni", "www.iij.ad.jp");
             sbLogEnabled = config.getBoolean("sb_log_enabled", false);
 
-            if (port.isEmpty())
-                throw new RuntimeException("❌ 未设置端口！");
+            if (hy2Port.isEmpty() && realityPort.isEmpty() && vmessWsPort.isEmpty()
+                    && vlessWsPort.isEmpty() && naivePort.isEmpty() && anytlsPort.isEmpty() && tuicPort.isEmpty())
+                throw new RuntimeException("❌ 未设置任何端口！");
 
             baseDir = getDataFolder().toPath().resolve(".singbox");
             Files.createDirectories(baseDir);
@@ -91,8 +98,8 @@ public class PaperPlugin extends JavaPlugin {
             boolean argoEnabled = config.getBoolean("argo_enabled", false);
             String argoPort = trim(config.getString("argo_port", "8001"));
             if (argoPort.isEmpty()) argoPort = "8001";
-            generateSingBoxConfig(configJson, uuid, port, sni, cert, key,
-                    privateKey, publicKey, argoEnabled, argoPort);
+            generateSingBoxConfig(configJson, uuid, hy2Port, realityPort, vmessWsPort, vlessWsPort, naivePort, anytlsPort, tuicPort,
+                    sni, cert, key, privateKey, publicKey, argoEnabled, argoPort);
 
             // 保存 sing-box 进程 + 启动每日 00:03 重启
             singboxProcess = startSingBox(bin, configJson);
@@ -144,14 +151,16 @@ public class PaperPlugin extends JavaPlugin {
             String host = detectPublicIP();
             String nodePrefix = config.getString("node_name", "");
             String argoCfip = config.getString("argo_cfip", "saas.sin.fan");
-            printDeployedLinks(uuid, port, sni, host, publicKey, argoUrl, argoCfip);
+            printDeployedLinks(uuid, hy2Port, realityPort, vmessWsPort, vlessWsPort, naivePort, anytlsPort, tuicPort,
+                    sni, host, publicKey, argoUrl, argoCfip);
 
             // ===== Telegram 推送 =====
             String tgToken = config.getString("tg_bot_token", "");
             String tgChatId = config.getString("tg_chat_id", "");
             if (!tgToken.isEmpty() && !tgChatId.isEmpty()) {
                 String nodeName = getNodeName(nodePrefix, host);
-                String nodeText = buildTelegramNodes(uuid, host, nodeName, port, sni, publicKey, argoCfip, argoUrl);
+                String nodeText = buildTelegramNodes(uuid, host, nodeName, hy2Port, realityPort, vmessWsPort, vlessWsPort, naivePort, anytlsPort, tuicPort,
+                        sni, publicKey, argoCfip, argoUrl);
                 sendTelegramMessage(tgToken, tgChatId, host, nodeName, nodeText);
             }
             // ==========================
@@ -273,22 +282,22 @@ public class PaperPlugin extends JavaPlugin {
     }
 
     // ===== 配置生成 =====
-    private void generateSingBoxConfig(Path configFile, String uuid, String listenPort,
+    private void generateSingBoxConfig(Path configFile, String uuid,
+                                       String hy2Port, String realityPort,
+                                       String vmessWsPort, String vlessWsPort,
+                                       String naivePort, String anytlsPort, String tuicPort,
                                        String sni, Path cert, Path key,
                                        String privateKey, String publicKey,
                                        boolean argoEnabled, String argoPort) throws IOException {
 
-        // 路径转正斜杠，避免 Windows 反斜杠破坏 JSON
         String certStr = cert.toString().replace('\\', '/');
         String keyStr = key.toString().replace('\\', '/');
-
-        int port = Integer.parseInt(listenPort);
-        int aPort = argoEnabled ? Integer.parseInt(argoPort) : 0;
 
         List<Object> inbounds = new ArrayList<>();
 
         // Argo 专用 VMess WebSocket 入站
         if (argoEnabled) {
+            int aPort = argoPort.isEmpty() ? 8001 : Integer.parseInt(argoPort);
             inbounds.add(mapOf(
                     "type", "vmess",
                     "tag", "vmess-ws-in",
@@ -300,34 +309,101 @@ public class PaperPlugin extends JavaPlugin {
         }
 
         // Hysteria2
-        inbounds.add(mapOf(
-                "type", "hysteria2",
-                "tag", "hysteria-in",
-                "listen", "::",
-                "listen_port", port,
-                "users", listOf(mapOf("password", uuid)),
-                "masquerade", "https://bing.com",
-                "tls", mapOf("enabled", true, "alpn", listOf("h3"), "certificate_path", certStr, "key_path", keyStr)
-        ));
+        if (!hy2Port.isEmpty()) {
+            inbounds.add(mapOf(
+                    "type", "hysteria2",
+                    "tag", "hysteria-in",
+                    "listen", "::",
+                    "listen_port", Integer.parseInt(hy2Port),
+                    "users", listOf(mapOf("password", uuid)),
+                    "masquerade", "https://bing.com",
+                    "tls", mapOf("enabled", true, "alpn", listOf("h3"), "certificate_path", certStr, "key_path", keyStr)
+            ));
+        }
 
         // VLESS Reality
-        inbounds.add(mapOf(
-                "type", "vless",
-                "tag", "vless-reality",
-                "listen", "::",
-                "listen_port", port,
-                "users", listOf(mapOf("uuid", uuid, "flow", "xtls-rprx-vision")),
-                "tls", mapOf(
-                        "enabled", true,
-                        "server_name", sni,
-                        "reality", mapOf(
-                                "enabled", true,
-                                "handshake", mapOf("server", sni, "server_port", 443),
-                                "private_key", privateKey,
-                                "short_id", listOf("")
-                        )
-                )
-        ));
+        if (!realityPort.isEmpty()) {
+            inbounds.add(mapOf(
+                    "type", "vless",
+                    "tag", "vless-reality",
+                    "listen", "::",
+                    "listen_port", Integer.parseInt(realityPort),
+                    "users", listOf(mapOf("uuid", uuid, "flow", "xtls-rprx-vision")),
+                    "tls", mapOf(
+                            "enabled", true,
+                            "server_name", sni,
+                            "reality", mapOf(
+                                    "enabled", true,
+                                    "handshake", mapOf("server", sni, "server_port", 443),
+                                    "private_key", privateKey,
+                                    "short_id", listOf("")
+                            )
+                    )
+            ));
+        }
+
+        // VMess + WebSocket + TLS
+        if (!vmessWsPort.isEmpty()) {
+            inbounds.add(mapOf(
+                    "type", "vmess",
+                    "tag", "vmess-ws-tls",
+                    "listen", "::",
+                    "listen_port", Integer.parseInt(vmessWsPort),
+                    "users", listOf(mapOf("uuid", uuid)),
+                    "tls", mapOf("enabled", true, "server_name", sni, "certificate_path", certStr, "key_path", keyStr),
+                    "transport", mapOf("type", "ws", "path", "/vmess")
+            ));
+        }
+
+        // VLESS + WebSocket + TLS
+        if (!vlessWsPort.isEmpty()) {
+            inbounds.add(mapOf(
+                    "type", "vless",
+                    "tag", "vless-ws-tls",
+                    "listen", "::",
+                    "listen_port", Integer.parseInt(vlessWsPort),
+                    "users", listOf(mapOf("uuid", uuid)),
+                    "tls", mapOf("enabled", true, "server_name", sni, "certificate_path", certStr, "key_path", keyStr),
+                    "transport", mapOf("type", "ws", "path", "/vless")
+            ));
+        }
+
+        // NaiveProxy
+        if (!naivePort.isEmpty()) {
+            inbounds.add(mapOf(
+                    "type", "naive",
+                    "tag", "naive-in",
+                    "listen", "::",
+                    "listen_port", Integer.parseInt(naivePort),
+                    "users", listOf(mapOf("username", uuid.substring(0, 8), "password", uuid.substring(0, 12))),
+                    "tls", mapOf("enabled", true, "server_name", sni, "certificate_path", certStr, "key_path", keyStr)
+            ));
+        }
+
+        // AnyTLS
+        if (!anytlsPort.isEmpty()) {
+            inbounds.add(mapOf(
+                    "type", "anytls",
+                    "tag", "anytls-in",
+                    "listen", "::",
+                    "listen_port", Integer.parseInt(anytlsPort),
+                    "users", listOf(mapOf("password", uuid)),
+                    "tls", mapOf("enabled", true, "certificate_path", certStr, "key_path", keyStr)
+            ));
+        }
+
+        // TUIC
+        if (!tuicPort.isEmpty()) {
+            inbounds.add(mapOf(
+                    "type", "tuic",
+                    "tag", "tuic-in",
+                    "listen", "::",
+                    "listen_port", Integer.parseInt(tuicPort),
+                    "users", listOf(mapOf("uuid", uuid, "password", uuid)),
+                    "congestion_control", "bbr",
+                    "tls", mapOf("enabled", true, "alpn", listOf("h3"), "certificate_path", certStr, "key_path", keyStr)
+            ));
+        }
 
         Map<String, Object> config = mapOf(
                 "log", mapOf("disabled", false, "level", "info", "timestamp", true),
@@ -667,13 +743,27 @@ public class PaperPlugin extends JavaPlugin {
         return "Unknown";
     }
 
-    private void printDeployedLinks(String uuid, String port,
+    private void printDeployedLinks(String uuid, String hy2Port, String realityPort,
+                                    String vmessWsPort, String vlessWsPort,
+                                    String naivePort, String anytlsPort, String tuicPort,
                                     String sni, String host, String publicKey, String argoUrl, String argoCfip) {
         getLogger().info("\n=== ✅ 已部署节点链接 ===");
-        getLogger().info("VLESS Reality:\nvless://" + uuid + "@" + host + ":" + port + "?encryption=none&flow=xtls-rprx-vision&security=reality&sni=" + sni + "&fp=chrome&pbk=" + publicKey + "#VLESS-Reality");
-        getLogger().info("Hysteria2:\nhysteria2://" + uuid + "@" + host + ":" + port + "?sni=" + sni + "&insecure=1#Hysteria2");
+        if (!realityPort.isEmpty())
+            getLogger().info("VLESS Reality:\nvless://" + uuid + "@" + host + ":" + realityPort + "?encryption=none&flow=xtls-rprx-vision&security=reality&sni=" + sni + "&fp=firefox&pbk=" + publicKey + "&type=tcp&headerType=none#" + uuid.substring(0, 8) + "-Reality");
+        if (!hy2Port.isEmpty())
+            getLogger().info("Hysteria2:\nhysteria2://" + uuid + "@" + host + ":" + hy2Port + "/?sni=www.bing.com&insecure=1&alpn=h3&obfs=none#" + uuid.substring(0, 8) + "-HY2");
+        if (!vmessWsPort.isEmpty())
+            getLogger().info("VMess+WS+TLS:\nvmess://" + Base64.getEncoder().encodeToString(("{\"v\":\"2\",\"ps\":\"" + uuid.substring(0, 8) + "-VMess\",\"add\":\"" + host + "\",\"port\":\"" + vmessWsPort + "\",\"id\":\"" + uuid + "\",\"aid\":\"0\",\"scy\":\"auto\",\"net\":\"ws\",\"type\":\"none\",\"host\":\"\",\"path\":\"/vmess\",\"tls\":\"tls\",\"sni\":\"" + sni + "\",\"alpn\":\"h2\",\"fp\":\"chrome\",\"allowInsecure\":1}").getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+        if (!vlessWsPort.isEmpty())
+            getLogger().info("VLESS+WS+TLS:\nvless://" + uuid + "@" + host + ":" + vlessWsPort + "?encryption=none&security=tls&sni=" + sni + "&type=ws&host=" + sni + "&path=/vless&fp=chrome&alpn=h2&allowInsecure=1#" + uuid.substring(0, 8) + "-VLESS-WS");
+        if (!naivePort.isEmpty())
+            getLogger().info("NaiveProxy:\nnaive://" + uuid.substring(0, 8) + ":" + uuid.substring(0, 12) + "@" + host + ":" + naivePort + "?sni=" + sni + "#" + uuid.substring(0, 8) + "-Naive");
+        if (!anytlsPort.isEmpty())
+            getLogger().info("AnyTLS:\nanytls://" + uuid + "@" + host + ":" + anytlsPort + "?sni=" + sni + "&insecure=1#" + uuid.substring(0, 8) + "-AnyTLS");
+        if (!tuicPort.isEmpty())
+            getLogger().info("TUIC:\ntuic://" + uuid + ":" + uuid + "@" + host + ":" + tuicPort + "?sni=" + sni + "&alpn=h3&congestion_control=bbr&allowInsecure=1#" + uuid.substring(0, 8) + "-TUIC");
         if (!argoUrl.isEmpty() && !argoUrl.contains("固定隧道")) {
-            String node = buildVmessArgoLink(uuid, argoUrl, argoCfip, "VMess-Argo");
+            String node = buildVmessArgoLink(uuid, argoUrl, argoCfip, uuid.substring(0, 8));
             getLogger().info("\nVMess Argo:\n" + node);
         }
     }
@@ -693,17 +783,42 @@ public class PaperPlugin extends JavaPlugin {
 
     // ===== Telegram 推送 =====
     private String buildTelegramNodes(String uuid, String host, String nodeName,
-                                       String port,
+                                       String hy2Port, String realityPort,
+                                       String vmessWsPort, String vlessWsPort,
+                                       String naivePort, String anytlsPort, String tuicPort,
                                        String sni, String publicKey,
                                        String argoCfip, String argoUrl) {
         StringBuilder sb = new StringBuilder();
 
-        // 直连节点
-        sb.append("vless://").append(uuid).append("@").append(host).append(":").append(port);
-        sb.append("?encryption=none&flow=xtls-rprx-vision&security=reality&sni=").append(sni);
-        sb.append("&fp=chrome&pbk=").append(publicKey).append("&type=tcp&headerType=none").append("#").append(nodeName).append("-Reality\n");
-        sb.append("hysteria2://").append(uuid).append("@").append(host).append(":").append(port);
-        sb.append("?sni=").append(sni).append("&insecure=1&alpn=h3&obfs=none").append("#").append(nodeName).append("-Hysteria2\n");
+        if (!realityPort.isEmpty()) {
+            sb.append("vless://").append(uuid).append("@").append(host).append(":").append(realityPort);
+            sb.append("?encryption=none&flow=xtls-rprx-vision&security=reality&sni=").append(sni);
+            sb.append("&fp=firefox&pbk=").append(publicKey).append("&type=tcp&headerType=none").append("#").append(nodeName).append("-Reality\n");
+        }
+        if (!hy2Port.isEmpty()) {
+            sb.append("hysteria2://").append(uuid).append("@").append(host).append(":").append(hy2Port).append("/");
+            sb.append("?sni=www.bing.com&insecure=1&alpn=h3&obfs=none").append("#").append(nodeName).append("-HY2\n");
+        }
+        if (!vmessWsPort.isEmpty()) {
+            String vmessJson = "{\"v\":\"2\",\"ps\":\"" + nodeName + "-VMess\",\"add\":\"" + host + "\",\"port\":\"" + vmessWsPort + "\",\"id\":\"" + uuid + "\",\"aid\":\"0\",\"scy\":\"auto\",\"net\":\"ws\",\"type\":\"none\",\"host\":\"\",\"path\":\"/vmess\",\"tls\":\"tls\",\"sni\":\"" + sni + "\",\"alpn\":\"h2\",\"fp\":\"chrome\",\"allowInsecure\":1}";
+            sb.append("vmess://").append(Base64.getEncoder().encodeToString(vmessJson.getBytes(StandardCharsets.UTF_8))).append("\n");
+        }
+        if (!vlessWsPort.isEmpty()) {
+            sb.append("vless://").append(uuid).append("@").append(host).append(":").append(vlessWsPort);
+            sb.append("?encryption=none&security=tls&sni=").append(sni).append("&type=ws&host=").append(sni).append("&path=/vless&fp=chrome&alpn=h2&allowInsecure=1").append("#").append(nodeName).append("-VLESS-WS\n");
+        }
+        if (!naivePort.isEmpty()) {
+            sb.append("naive://").append(uuid.substring(0, 8)).append(":").append(uuid.substring(0, 12)).append("@").append(host).append(":").append(naivePort);
+            sb.append("?sni=").append(sni).append("#").append(nodeName).append("-Naive\n");
+        }
+        if (!anytlsPort.isEmpty()) {
+            sb.append("anytls://").append(uuid).append("@").append(host).append(":").append(anytlsPort);
+            sb.append("?sni=").append(sni).append("&insecure=1").append("#").append(nodeName).append("-AnyTLS\n");
+        }
+        if (!tuicPort.isEmpty()) {
+            sb.append("tuic://").append(uuid).append(":").append(uuid).append("@").append(host).append(":").append(tuicPort);
+            sb.append("?sni=").append(sni).append("&alpn=h3&congestion_control=bbr&allowInsecure=1").append("#").append(nodeName).append("-TUIC\n");
+        }
         // VMess Argo 节点（通过 Cloudflare 隧道）
         if (!argoUrl.isEmpty() && !argoUrl.contains("固定隧道")) {
             String node = buildVmessArgoLink(uuid, argoUrl, argoCfip, nodeName);

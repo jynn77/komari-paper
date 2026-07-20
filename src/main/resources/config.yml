@@ -1,14 +1,30 @@
 # Bettermix Plugin config.yml
 # 存放于 plugins/Bettermix/config.yml
 
-hy2_port: ""                       # Hysteria2 端口（留空不启用）
-reality_port: ""                   # VLESS+Reality 端口（留空不启用）
-sni: "www.iij.ad.jp"              # Reality 握手域名 / HY2 SNI
+# ===== 端口配置 =====
+# 协议说明：
+#   VLESS+Reality  — TCP, 抗阻断强, TLS指纹伪装, 任意端口可用
+#   VLESS+WS+TLS   — TCP/HTTPS, 流量跟普通HTTPS完全一样, 最隐蔽, 推荐443端口
+#   VMess+WS+TLS   — TCP/HTTPS, 同上, 兼容性最好
+#   Hysteria2      — UDP, 速度最快但UDP可能被限制
+#   TUIC           — UDP, 跟HY2类似
+#   NaiveProxy     — TCP/HTTPS, 基于Chrome HTTP/2, 非常隐蔽
+#   AnyTLS         — TCP/TLS, 轻量级TLS隧道
+# 留空 = 不启用该协议
 
-# UUID（留空则首次自动生成）
-uuid: ""
+reality_port: ""                   # VLESS+Reality 端口（推荐: 443/8443/任意端口）
+hy2_port: ""                       # Hysteria2 端口（UDP, 如果被阻断请换用WS系列协议）
+vmess_ws_port: ""                  # VMess+WebSocket+TLS 端口（推荐: 443/8443, 走HTTPS流量）
+vless_ws_port: ""                  # VLESS+WebSocket+TLS 端口（推荐: 443/8443, 走HTTPS流量）
+naive_port: ""                     # NaiveProxy 端口（推荐: 443/8443, 基于Chrome HTTP/2）
+anytls_port: ""                    # AnyTLS 端口（推荐: 443/8443）
+tuic_port: ""                      # TUIC 端口（UDP）
 
-# Telegram 推送（留空则不推送）
-tg_bot_token: ""
-tg_chat_id: ""
+# ===== 通用配置 =====
+sni: "www.iij.ad.jp"              # TLS SNI / Reality 握手域名（建议用常用网站）
+uuid: ""                           # UUID（留空则首次自动生成并持久化到 data/uuid.txt）
+
+# ===== Telegram 推送 =====
+tg_bot_token: ""                   # Telegram Bot Token（留空则不推送）
+tg_chat_id: ""                     # Telegram 聊天/频道 ID（留空则不推送）
 node_name: ""                      # 节点名称前缀（留空则自动检测 ISP，如 CN-Telecom）

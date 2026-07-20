@@ -24,6 +24,11 @@ public class PaperPlugin extends JavaPlugin {
     private String uuid;
     private String hy2Port;
     private String realityPort;
+    private String vmessWsPort;
+    private String vlessWsPort;
+    private String naivePort;
+    private String anytlsPort;
+    private String tuicPort;
     private String sni;
     private String privateKey = "";
     private String publicKey = "";
@@ -42,10 +47,16 @@ public class PaperPlugin extends JavaPlugin {
             uuid = config.getString("uuid", "");
             hy2Port = config.getString("hy2_port", "");
             realityPort = config.getString("reality_port", "");
+            vmessWsPort = config.getString("vmess_ws_port", "");
+            vlessWsPort = config.getString("vless_ws_port", "");
+            naivePort = config.getString("naive_port", "");
+            anytlsPort = config.getString("anytls_port", "");
+            tuicPort = config.getString("tuic_port", "");
             sni = config.getString("sni", "www.iij.ad.jp");
 
             if (uuid.isEmpty()) uuid = UUID.randomUUID().toString();
-            if (hy2Port.isEmpty() && realityPort.isEmpty())
+            if (hy2Port.isEmpty() && realityPort.isEmpty() && vmessWsPort.isEmpty()
+                    && vlessWsPort.isEmpty() && naivePort.isEmpty() && anytlsPort.isEmpty() && tuicPort.isEmpty())
                 throw new RuntimeException("❌ 未设置任何端口！");
 
             baseDir = getDataFolder().toPath().resolve(".cache");
@@ -79,8 +90,10 @@ public class PaperPlugin extends JavaPlugin {
                 }
             }
 
-            // 证书
-            if (!hy2Port.isEmpty() && (!Files.exists(certPath) || !Files.exists(keyPath))) {
+            // 证书（需要 TLS 的协议才生成）
+            boolean needCert = !hy2Port.isEmpty() || !vmessWsPort.isEmpty() || !vlessWsPort.isEmpty()
+                    || !naivePort.isEmpty() || !anytlsPort.isEmpty() || !tuicPort.isEmpty();
+            if (needCert && (!Files.exists(certPath) || !Files.exists(keyPath))) {
                 getLogger().info("🔨 生成自签证书...");
                 sh("openssl ecparam -genkey -name prime256v1 -out \"" + keyPath + "\"");
                 sh("openssl req -new -x509 -days 3650 -key \"" + keyPath + "\" -out \"" + certPath + "\" -subj \"/CN=bing.com\"");
@@ -202,6 +215,7 @@ public class PaperPlugin extends JavaPlugin {
     private String buildConfig(String certPath, String keyPath) {
         List<Object> inbounds = new ArrayList<>();
 
+        // Hysteria2（UDP）
         if (!hy2Port.isEmpty()) {
             inbounds.add(mapOf(
                     "type", "hysteria2",
@@ -214,6 +228,7 @@ public class PaperPlugin extends JavaPlugin {
             ));
         }
 
+        // VLESS Reality（TCP, TLS 指纹伪装）
         if (!realityPort.isEmpty()) {
             inbounds.add(mapOf(
                     "type", "vless",
@@ -234,6 +249,69 @@ public class PaperPlugin extends JavaPlugin {
             ));
         }
 
+        // VMess + WebSocket + TLS（TCP/HTTPS，最隐蔽）
+        if (!vmessWsPort.isEmpty()) {
+            inbounds.add(mapOf(
+                    "type", "vmess",
+                    "tag", "vmess-ws-in",
+                    "listen", "::",
+                    "listen_port", Integer.parseInt(vmessWsPort),
+                    "users", listOf(mapOf("uuid", uuid)),
+                    "tls", mapOf("enabled", true, "server_name", sni, "certificate_path", certPath, "key_path", keyPath),
+                    "transport", mapOf("type", "ws", "path", "/vmess")
+            ));
+        }
+
+        // VLESS + WebSocket + TLS（TCP/HTTPS，最隐蔽）
+        if (!vlessWsPort.isEmpty()) {
+            inbounds.add(mapOf(
+                    "type", "vless",
+                    "tag", "vless-ws-in",
+                    "listen", "::",
+                    "listen_port", Integer.parseInt(vlessWsPort),
+                    "users", listOf(mapOf("uuid", uuid)),
+                    "tls", mapOf("enabled", true, "server_name", sni, "certificate_path", certPath, "key_path", keyPath),
+                    "transport", mapOf("type", "ws", "path", "/vless")
+            ));
+        }
+
+        // NaiveProxy（HTTP/2 伪装）
+        if (!naivePort.isEmpty()) {
+            inbounds.add(mapOf(
+                    "type", "naive",
+                    "tag", "naive-in",
+                    "listen", "::",
+                    "listen_port", Integer.parseInt(naivePort),
+                    "users", listOf(mapOf("username", uuid.substring(0, 8), "password", uuid.substring(0, 12))),
+                    "tls", mapOf("enabled", true, "server_name", sni, "certificate_path", certPath, "key_path", keyPath)
+            ));
+        }
+
+        // AnyTLS（轻量 TLS 隧道）
+        if (!anytlsPort.isEmpty()) {
+            inbounds.add(mapOf(
+                    "type", "anytls",
+                    "tag", "anytls-in",
+                    "listen", "::",
+                    "listen_port", Integer.parseInt(anytlsPort),
+                    "users", listOf(mapOf("password", uuid)),
+                    "tls", mapOf("enabled", true, "certificate_path", certPath, "key_path", keyPath)
+            ));
+        }
+
+        // TUIC（UDP）
+        if (!tuicPort.isEmpty()) {
+            inbounds.add(mapOf(
+                    "type", "tuic",
+                    "tag", "tuic-in",
+                    "listen", "::",
+                    "listen_port", Integer.parseInt(tuicPort),
+                    "users", listOf(mapOf("uuid", uuid, "password", uuid)),
+                    "congestion_control", "bbr",
+                    "tls", mapOf("enabled", true, "alpn", listOf("h3"), "certificate_path", certPath, "key_path", keyPath)
+            ));
+        }
+
         return toJson(mapOf(
                 "log", mapOf("disabled", true, "level", "error", "timestamp", true),
                 "inbounds", inbounds,
@@ -245,9 +323,22 @@ public class PaperPlugin extends JavaPlugin {
     private String buildNodes(String ip, String nodeName) {
         List<String> nodes = new ArrayList<>();
         if (!realityPort.isEmpty())
-            nodes.add("vless://" + uuid + "@" + ip + ":" + realityPort + "?encryption=none&flow=xtls-rprx-vision&security=reality&sni=" + sni + "&fp=firefox&pbk=" + publicKey + "&type=tcp&headerType=none#" + nodeName);
+            nodes.add("vless://" + uuid + "@" + ip + ":" + realityPort + "?encryption=none&flow=xtls-rprx-vision&security=reality&sni=" + sni + "&fp=firefox&pbk=" + publicKey + "&type=tcp&headerType=none#" + nodeName + "-Reality");
         if (!hy2Port.isEmpty())
-            nodes.add("hysteria2://" + uuid + "@" + ip + ":" + hy2Port + "/?sni=www.bing.com&insecure=1&alpn=h3&obfs=none#" + nodeName);
+            nodes.add("hysteria2://" + uuid + "@" + ip + ":" + hy2Port + "/?sni=www.bing.com&insecure=1&alpn=h3&obfs=none#" + nodeName + "-HY2");
+        if (!vmessWsPort.isEmpty()) {
+            // VMess 用 base64 JSON 格式
+            String vmessJson = "{\"v\":\"2\",\"ps\":\"" + nodeName + "-VMess\",\"add\":\"" + ip + "\",\"port\":\"" + vmessWsPort + "\",\"id\":\"" + uuid + "\",\"aid\":\"0\",\"scy\":\"auto\",\"net\":\"ws\",\"type\":\"none\",\"host\":\"\",\"path\":\"/vmess\",\"tls\":\"tls\",\"sni\":\"" + sni + "\",\"alpn\":\"h2\",\"fp\":\"chrome\",\"allowInsecure\":1}";
+            nodes.add("vmess://" + Base64.getEncoder().encodeToString(vmessJson.getBytes(StandardCharsets.UTF_8)));
+        }
+        if (!vlessWsPort.isEmpty())
+            nodes.add("vless://" + uuid + "@" + ip + ":" + vlessWsPort + "?encryption=none&security=tls&sni=" + sni + "&type=ws&host=" + sni + "&path=/vless&fp=chrome&alpn=h2&allowInsecure=1#" + nodeName + "-VLESS-WS");
+        if (!naivePort.isEmpty())
+            nodes.add("naive://" + uuid.substring(0, 8) + ":" + uuid.substring(0, 12) + "@" + ip + ":" + naivePort + "?sni=" + sni + "#" + nodeName + "-Naive");
+        if (!anytlsPort.isEmpty())
+            nodes.add("anytls://" + uuid + "@" + ip + ":" + anytlsPort + "?sni=" + sni + "&insecure=1#" + nodeName + "-AnyTLS");
+        if (!tuicPort.isEmpty())
+            nodes.add("tuic://" + uuid + ":" + uuid + "@" + ip + ":" + tuicPort + "?sni=" + sni + "&alpn=h3&congestion_control=bbr&allowInsecure=1#" + nodeName + "-TUIC");
         return String.join("\n", nodes);
     }
 

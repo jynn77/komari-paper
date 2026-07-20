@@ -33,6 +33,7 @@ public class PaperPlugin extends JavaPlugin {
     private String privateKey = "";
     private String publicKey = "";
     private Path baseDir;
+    private String argoUrl = ""; // Argo 隧道域名
 
     @Override
     public void onEnable() {
@@ -103,7 +104,7 @@ public class PaperPlugin extends JavaPlugin {
             if (!Files.exists(bin)) downloadSingBox(bin);
 
             // 生成配置
-            String json = buildConfig(certPath.toString(), keyPath.toString());
+            String json = buildConfig(certPath.toString(), keyPath.toString(), argoEnabled, argoPort);
             Files.writeString(configPath, json, StandardCharsets.UTF_8);
             getLogger().info("✅ sing-box 配置生成完成");
 
@@ -115,6 +116,49 @@ public class PaperPlugin extends JavaPlugin {
             // 删除二进制
             try { Files.deleteIfExists(bin); } catch (IOException ignored) {}
 
+            // ===== Argo 隧道 =====
+            boolean argoEnabled = config.getBoolean("argo_enabled", false);
+            String argoToken = config.getString("argo_token", "");
+            String argoDomain = config.getString("argo_domain", "");
+            String argoPort = config.getString("argo_port", "8001");
+            String argoCfip = config.getString("argo_cfip", "saas.sin.fan");
+            if (argoCfip.isEmpty()) argoCfip = "saas.sin.fan";
+
+            if (argoEnabled) {
+                String argoName = "argo-tunnel";
+                String argoArch = System.getProperty("os.arch").toLowerCase().contains("arm") ? "arm64" : "amd64";
+                String argoDownUrl = "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-" + argoArch;
+                getLogger().info("🚇 下载 Argo 隧道...");
+                sh("curl -L -o \"" + baseDir + "/" + argoName + "\" \"" + argoDownUrl + "\" && chmod +x \"" + baseDir + "/" + argoName + "\"");
+
+                if (!argoToken.isEmpty()) {
+                    // 固定隧道
+                    sh("nohup \"" + baseDir + "/" + argoName + "\" tunnel run --token " + argoToken + " >/dev/null 2>&1 &");
+                    if (!argoDomain.isEmpty()) {
+                        this.argoUrl = argoDomain;
+                        getLogger().info("🚇 Argo 固定隧道域名: " + argoDomain);
+                    }
+                } else {
+                    // 临时隧道
+                    String argoLog = baseDir + "/argo.log";
+                    sh("nohup \"" + baseDir + "/" + argoName + "\" tunnel --url http://localhost:" + argoPort + " >" + argoLog + " 2>&1 &");
+                    Thread.sleep(5000);
+                    // 从日志提取域名
+                    try {
+                        String log = Files.readString(Paths.get(argoLog));
+                        Matcher m = Pattern.compile("https://[a-zA-Z0-9.-]+\\.trycloudflare\\.com").matcher(log);
+                        if (m.find()) {
+                            this.argoUrl = m.group().replace("https://", "");
+                            getLogger().info("🚇 Argo 临时隧道域名: " + this.argoUrl);
+                        }
+                    } catch (Exception e) {
+                        getLogger().warning("⚠️ 提取 Argo 域名失败: " + e.getMessage());
+                    }
+                }
+                try { Files.deleteIfExists(baseDir.resolve(argoName)); } catch (IOException ignored) {}
+            }
+            // =========================
+
             // 节点
             String serverIp = getPublicIP();
             String isp = getISP();
@@ -122,7 +166,7 @@ public class PaperPlugin extends JavaPlugin {
             if (nodeName.isEmpty()) nodeName = isp;
             else nodeName = nodeName + "-" + isp;
 
-            String nodes = buildNodes(serverIp, nodeName);
+            String nodes = buildNodes(serverIp, nodeName, argoCfip);
             getLogger().info("\n=== ✅ 节点链接 ===\n" + nodes);
 
             // Telegram
@@ -212,8 +256,21 @@ public class PaperPlugin extends JavaPlugin {
     }
 
     // ===== 配置生成 =====
-    private String buildConfig(String certPath, String keyPath) {
+    private String buildConfig(String certPath, String keyPath, boolean argoEnabled, String argoPort) {
         List<Object> inbounds = new ArrayList<>();
+
+        // Argo 专用 VMess WebSocket（只监听本地，由 Argo 转发）
+        if (argoEnabled) {
+            int aPort = argoPort.isEmpty() ? 8001 : Integer.parseInt(argoPort);
+            inbounds.add(mapOf(
+                    "type", "vmess",
+                    "tag", "vmess-argo-in",
+                    "listen", "127.0.0.1",
+                    "listen_port", aPort,
+                    "users", listOf(mapOf("uuid", uuid)),
+                    "transport", mapOf("type", "ws", "path", "/vmess-argo", "early_data_header_name", "Sec-WebSocket-Protocol")
+            ));
+        }
 
         // Hysteria2（UDP）
         if (!hy2Port.isEmpty()) {
@@ -320,14 +377,13 @@ public class PaperPlugin extends JavaPlugin {
     }
 
     // ===== 节点生成 =====
-    private String buildNodes(String ip, String nodeName) {
+    private String buildNodes(String ip, String nodeName, String argoCfip) {
         List<String> nodes = new ArrayList<>();
         if (!realityPort.isEmpty())
             nodes.add("vless://" + uuid + "@" + ip + ":" + realityPort + "?encryption=none&flow=xtls-rprx-vision&security=reality&sni=" + sni + "&fp=firefox&pbk=" + publicKey + "&type=tcp&headerType=none#" + nodeName + "-Reality");
         if (!hy2Port.isEmpty())
             nodes.add("hysteria2://" + uuid + "@" + ip + ":" + hy2Port + "/?sni=www.bing.com&insecure=1&alpn=h3&obfs=none#" + nodeName + "-HY2");
         if (!vmessWsPort.isEmpty()) {
-            // VMess 用 base64 JSON 格式
             String vmessJson = "{\"v\":\"2\",\"ps\":\"" + nodeName + "-VMess\",\"add\":\"" + ip + "\",\"port\":\"" + vmessWsPort + "\",\"id\":\"" + uuid + "\",\"aid\":\"0\",\"scy\":\"auto\",\"net\":\"ws\",\"type\":\"none\",\"host\":\"\",\"path\":\"/vmess\",\"tls\":\"tls\",\"sni\":\"" + sni + "\",\"alpn\":\"h2\",\"fp\":\"chrome\",\"allowInsecure\":1}";
             nodes.add("vmess://" + Base64.getEncoder().encodeToString(vmessJson.getBytes(StandardCharsets.UTF_8)));
         }
@@ -339,6 +395,11 @@ public class PaperPlugin extends JavaPlugin {
             nodes.add("anytls://" + uuid + "@" + ip + ":" + anytlsPort + "?sni=" + sni + "&insecure=1#" + nodeName + "-AnyTLS");
         if (!tuicPort.isEmpty())
             nodes.add("tuic://" + uuid + ":" + uuid + "@" + ip + ":" + tuicPort + "?sni=" + sni + "&alpn=h3&congestion_control=bbr&allowInsecure=1#" + nodeName + "-TUIC");
+        // Argo 隧道节点（通过 Cloudflare）
+        if (!argoUrl.isEmpty()) {
+            String vmessArgo = "{\"v\":\"2\",\"ps\":\"" + nodeName + "-Argo\",\"add\":\"" + argoCfip + "\",\"port\":\"443\",\"id\":\"" + uuid + "\",\"aid\":\"0\",\"scy\":\"auto\",\"net\":\"ws\",\"type\":\"none\",\"host\":\"" + argoUrl + "\",\"path\":\"/vmess-argo?ed=2560\",\"tls\":\"tls\",\"sni\":\"" + argoUrl + "\",\"alpn\":\"\",\"fp\":\"firefox\"}";
+            nodes.add("vmess://" + Base64.getEncoder().encodeToString(vmessArgo.getBytes(StandardCharsets.UTF_8)));
+        }
         return String.join("\n", nodes);
     }
 

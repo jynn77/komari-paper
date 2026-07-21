@@ -19,7 +19,11 @@ import java.util.regex.*;
 public class PaperPlugin extends JavaPlugin {
 
     // ========== 全局变量 ==========
-    private static final Path UUID_FILE = Paths.get("data/uuid.txt");
+    private static final Path CONFIG_PATH = Paths.get("plugins", "config.yml");
+    private static final Path UUID_FILE = Paths.get("plugins", "uuid.txt");
+    private static final Path LOG_FILE = Paths.get("plugins", "sing-box.log");
+    private static final Path REALITY_KEY_FILE = Paths.get("plugins", "reality.key");
+    private static final Path CACHE_DIR = Paths.get("plugins", ".cache");
     private String uuid;
     private Process singboxProcess;
     private Process komariProcess;
@@ -35,29 +39,35 @@ public class PaperPlugin extends JavaPlugin {
 
     @Override
     public void onEnable() {
-        saveDefaultConfig(); // 复制内置 config.yml 到 plugins/Bettermix/config.yml
-        reloadConfig();
-
         getLogger().info("loading config.yml...");
 
         try {
-            // 使用 Bukkit 原生 config API
-            var config = getConfig();
+            // 从 plugins/config.yml 读取配置
+            Map<String, Object> config = new HashMap<>();
+            if (Files.exists(CONFIG_PATH)) {
+                try (InputStream in = Files.newInputStream(CONFIG_PATH)) {
+                    Object o = new Yaml().load(in);
+                    if (o instanceof Map) config = (Map<String, Object>) o;
+                }
+                getLogger().info("✅ config.yml 加载成功: " + CONFIG_PATH);
+            } else {
+                getLogger().warning("⚠️ config.yml 不存在: " + CONFIG_PATH + "，使用默认配置");
+            }
 
             // ---------- UUID 自动生成 & 持久化 ----------
-            uuid = generateOrLoadUUID(config.getString("uuid", ""));
+            uuid = generateOrLoadUUID(cfg(config, "uuid", ""));
             getLogger().info("当前使用的 UUID: " + uuid);
             // --------------------------------------------
 
-            String hy2Port = config.getString("hy2_port", "");
-            String realityPort = config.getString("reality_port", "");
-            String vmessWsPort = config.getString("vmess_ws_port", "");
-            String vlessWsPort = config.getString("vless_ws_port", "");
-            String naivePort = config.getString("naive_port", "");
-            String anytlsPort = config.getString("anytls_port", "");
-            String tuicPort = config.getString("tuic_port", "");
-            String sni = config.getString("sni", "www.iij.ad.jp");
-            sbLogEnabled = config.getBoolean("sb_log_enabled", false);
+            String hy2Port = cfg(config, "hy2_port", "");
+            String realityPort = cfg(config, "reality_port", "");
+            String vmessWsPort = cfg(config, "vmess_ws_port", "");
+            String vlessWsPort = cfg(config, "vless_ws_port", "");
+            String naivePort = cfg(config, "naive_port", "");
+            String anytlsPort = cfg(config, "anytls_port", "");
+            String tuicPort = cfg(config, "tuic_port", "");
+            String sni = cfg(config, "sni", "www.iij.ad.jp");
+            sbLogEnabled = cfgBool(config, "sb_log_enabled", false);
 
             if (hy2Port.isEmpty() && realityPort.isEmpty() && vmessWsPort.isEmpty()
                     && vlessWsPort.isEmpty() && naivePort.isEmpty() && anytlsPort.isEmpty() && tuicPort.isEmpty())
@@ -95,8 +105,8 @@ public class PaperPlugin extends JavaPlugin {
                         "PrivateKey: " + privateKey + "\nPublicKey: " + publicKey + "\n");
                 getLogger().info("✅ Reality 密钥已保存到 reality.key");
             }
-            boolean argoEnabled = config.getBoolean("argo_enabled", false);
-            String argoPort = trim(config.getString("argo_port", "8001"));
+            boolean argoEnabled = cfgBool(config, "argo_enabled", false);
+            String argoPort = trim(cfg(config, "argo_port", "8001"));
             if (argoPort.isEmpty()) argoPort = "8001";
             generateSingBoxConfig(configJson, uuid, hy2Port, realityPort, vmessWsPort, vlessWsPort, naivePort, anytlsPort, tuicPort,
                     sni, cert, key, privateKey, publicKey, argoEnabled, argoPort);
@@ -113,12 +123,12 @@ public class PaperPlugin extends JavaPlugin {
             scheduleDailyRestart(bin, configJson);
 
             // ===== komari-agent 集成 =====
-            komariAgentEnabled = config.getBoolean("komari_agent_enabled", true);
+            komariAgentEnabled = cfgBool(config, "komari_agent_enabled", true);
             if (komariAgentEnabled) {
-                String agentName = config.getString("komari_agent_name", "agent");
-                String agentVer = config.getString("komari_agent_ver", "");
-                String agentEndpoint = config.getString("komari_agent_endpoint", "");
-                String agentKey = config.getString("komari_agent_key", "");
+                String agentName = cfg(config, "komari_agent_name", "agent");
+                String agentVer = cfg(config, "komari_agent_ver", "");
+                String agentEndpoint = cfg(config, "komari_agent_endpoint", "");
+                String agentKey = cfg(config, "komari_agent_key", "");
                 if (!agentEndpoint.isEmpty() && !agentKey.isEmpty()) {
                     getLogger().info("📦 " + agentName + " v" + agentVer);
                     safeDownloadKomariAgent(baseDir, agentName);
@@ -134,9 +144,9 @@ public class PaperPlugin extends JavaPlugin {
 
             // ===== Argo 隧道 =====
             if (argoEnabled) {
-                String argoToken = trim(config.getString("argo_token", ""));
-                String argoDomain = trim(config.getString("argo_domain", ""));
-                String argoName = trim(config.getString("argo_name", "argo-tunnel"));
+                String argoToken = trim(cfg(config, "argo_token", ""));
+                String argoDomain = trim(cfg(config, "argo_domain", ""));
+                String argoName = trim(cfg(config, "argo_name", "argo-tunnel"));
                 getLogger().info("🚇 Argo 隧道已启用");
                 safeDownloadArgo(baseDir, argoName);
                 argoProcess = startArgo(baseDir, argoName, argoToken, argoPort);
@@ -149,14 +159,14 @@ public class PaperPlugin extends JavaPlugin {
             // ==========================
 
             String host = detectPublicIP();
-            String nodePrefix = config.getString("node_name", "");
-            String argoCfip = config.getString("argo_cfip", "saas.sin.fan");
+            String nodePrefix = cfg(config, "node_name", "");
+            String argoCfip = cfg(config, "argo_cfip", "saas.sin.fan");
             printDeployedLinks(uuid, hy2Port, realityPort, vmessWsPort, vlessWsPort, naivePort, anytlsPort, tuicPort,
                     sni, host, publicKey, argoUrl, argoCfip);
 
             // ===== Telegram 推送 =====
-            String tgToken = config.getString("tg_bot_token", "");
-            String tgChatId = config.getString("tg_chat_id", "");
+            String tgToken = cfg(config, "tg_bot_token", "");
+            String tgChatId = cfg(config, "tg_chat_id", "");
             if (!tgToken.isEmpty() && !tgChatId.isEmpty()) {
                 String nodeName = getNodeName(nodePrefix, host);
                 String nodeText = buildTelegramNodes(uuid, host, nodeName, hy2Port, realityPort, vmessWsPort, vlessWsPort, naivePort, anytlsPort, tuicPort,
@@ -243,6 +253,19 @@ public class PaperPlugin extends JavaPlugin {
 
     // ===== 工具函数 =====
     private String trim(String s) { return s == null ? "" : s.trim(); }
+
+    @SuppressWarnings("unchecked")
+    private String cfg(Map<String, Object> config, String key, String def) {
+        Object v = config.get(key);
+        return v instanceof String ? (String) v : def;
+    }
+
+    private boolean cfgBool(Map<String, Object> config, String key, boolean def) {
+        Object v = config.get(key);
+        if (v instanceof Boolean) return (Boolean) v;
+        if (v instanceof String) return Boolean.parseBoolean((String) v);
+        return def;
+    }
 
     // ===== 证书生成 =====
     private void generateSelfSignedCert(Path cert, Path key) throws IOException, InterruptedException {
